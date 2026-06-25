@@ -1,0 +1,76 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Local SDK/toolchain paths
+**/local.properties
+
+# Android/Gradle generated state
+**/.gradle/
+
+# HarmonyOS/DevEco generated state
+**/.hvigor/
+**/oh_modules/
+**/build/
+**/.idea/
+**/GeneratedPluginRegistrant.ets
+**/src/main/resources/rawfile/flutter_assets/
+**/libs/arm64-v8a/libapp.so
+**/libs/arm64-v8a/libflutter.so
+**/libs/arm64-v8a/libvmservice_snapshot.so
+
+# Keep Gradle wrapper scripts and distribution metadata versioned.
+!android/gradlew
+!android/gradlew.bat
+!android/gradle/
+!android/gradle/wrapper/
+!android/gradle/wrapper/gradle-wrapper.jar
+!android/gradle/wrapper/gradle-wrapper.properties
+
+# Signing materials
+*.p12
+*.p7b
+*.cer
+*.csr
+*.jks
+*.keystore

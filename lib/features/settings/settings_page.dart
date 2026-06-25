@@ -1,0 +1,666 @@
+import 'package:flutter/material.dart';
+
+import '../../app/app_state.dart';
+import '../../core/models/echo_settings.dart';
+import '../../core/models/media_item.dart';
+import '../../shared/widgets/section_header.dart';
+
+const List<String> _equalizerBands = <String>['60', '230', '910', '4k', '14k'];
+
+class SettingsPage extends StatelessWidget {
+  const SettingsPage({super.key, required this.state});
+
+  final EchoAppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('设置')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+        children: <Widget>[
+          const SectionHeader(title: 'Look and feel'),
+          _SettingsCard(
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.brightness_6_rounded),
+                title: const Text('主题模式'),
+                subtitle: Text(_themeLabel(state.settings.themeMode)),
+                trailing: SegmentedButton<ThemeMode>(
+                  segments: const <ButtonSegment<ThemeMode>>[
+                    ButtonSegment(
+                      value: ThemeMode.system,
+                      icon: Icon(Icons.phone_android_rounded),
+                    ),
+                    ButtonSegment(
+                      value: ThemeMode.light,
+                      icon: Icon(Icons.light_mode_rounded),
+                    ),
+                    ButtonSegment(
+                      value: ThemeMode.dark,
+                      icon: Icon(Icons.dark_mode_rounded),
+                    ),
+                  ],
+                  selected: <ThemeMode>{state.settings.themeMode},
+                  onSelectionChanged: (value) =>
+                      state.setThemeMode(value.first),
+                ),
+              ),
+              SwitchListTile(
+                secondary: const Icon(Icons.palette_rounded),
+                title: const Text('动态取色'),
+                subtitle: const Text('Android 12+ 后续接入 Material You'),
+                value: state.settings.dynamicColor,
+                onChanged: state.toggleDynamicColor,
+              ),
+            ],
+          ),
+          const SectionHeader(title: 'Now playing'),
+          _SettingsCard(
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.slideshow_rounded),
+                title: const Text('默认播放页视图'),
+                subtitle: const Text('控制打开 Now Playing 时优先显示的内容'),
+                trailing: SegmentedButton<PlaybackView>(
+                  segments: const <ButtonSegment<PlaybackView>>[
+                    ButtonSegment(
+                      value: PlaybackView.artwork,
+                      icon: Icon(Icons.album_rounded),
+                    ),
+                    ButtonSegment(
+                      value: PlaybackView.lyrics,
+                      icon: Icon(Icons.lyrics_rounded),
+                    ),
+                  ],
+                  selected: <PlaybackView>{state.settings.defaultPlaybackView},
+                  onSelectionChanged: (value) =>
+                      state.setDefaultPlaybackView(value.first),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.subtitles_rounded),
+                title: const Text('字幕字号'),
+                subtitle: Text(
+                  '${state.settings.subtitleFontSize.toStringAsFixed(0)} px',
+                ),
+              ),
+              Slider(
+                min: 12,
+                max: 28,
+                divisions: 8,
+                label:
+                    '${state.settings.subtitleFontSize.toStringAsFixed(0)} px',
+                value: state.settings.subtitleFontSize,
+                onChanged: state.setSubtitleFontSize,
+              ),
+              ListTile(
+                leading: const Icon(Icons.format_color_text_rounded),
+                title: const Text('字幕颜色'),
+                subtitle: Text(
+                  _subtitleTextColorLabel(state.settings.subtitleTextColor),
+                ),
+                trailing: SegmentedButton<SubtitleTextColor>(
+                  segments: const <ButtonSegment<SubtitleTextColor>>[
+                    ButtonSegment(
+                      value: SubtitleTextColor.white,
+                      icon: Icon(Icons.circle_rounded),
+                    ),
+                    ButtonSegment(
+                      value: SubtitleTextColor.yellow,
+                      icon: Icon(Icons.circle_rounded),
+                    ),
+                    ButtonSegment(
+                      value: SubtitleTextColor.cyan,
+                      icon: Icon(Icons.circle_rounded),
+                    ),
+                  ],
+                  selected: <SubtitleTextColor>{
+                    state.settings.subtitleTextColor,
+                  },
+                  onSelectionChanged: (value) =>
+                      state.setSubtitleTextColor(value.first),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.vertical_align_bottom_rounded),
+                title: const Text('字幕位置'),
+                subtitle: Text(
+                  _subtitlePositionLabel(state.settings.subtitlePosition),
+                ),
+                trailing: SegmentedButton<SubtitlePosition>(
+                  segments: const <ButtonSegment<SubtitlePosition>>[
+                    ButtonSegment(
+                      value: SubtitlePosition.low,
+                      icon: Icon(Icons.vertical_align_bottom_rounded),
+                    ),
+                    ButtonSegment(
+                      value: SubtitlePosition.middle,
+                      icon: Icon(Icons.vertical_align_center_rounded),
+                    ),
+                    ButtonSegment(
+                      value: SubtitlePosition.high,
+                      icon: Icon(Icons.vertical_align_top_rounded),
+                    ),
+                  ],
+                  selected: <SubtitlePosition>{
+                    state.settings.subtitlePosition,
+                  },
+                  onSelectionChanged: (value) =>
+                      state.setSubtitlePosition(value.first),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.aspect_ratio_rounded),
+                title: const Text('视频画面比例'),
+                subtitle:
+                    Text(_videoScaleModeLabel(state.settings.videoScaleMode)),
+                trailing: SegmentedButton<VideoScaleMode>(
+                  segments: const <ButtonSegment<VideoScaleMode>>[
+                    ButtonSegment(
+                      value: VideoScaleMode.fit,
+                      icon: Icon(Icons.fit_screen_rounded),
+                    ),
+                    ButtonSegment(
+                      value: VideoScaleMode.stretch,
+                      icon: Icon(Icons.open_in_full_rounded),
+                    ),
+                    ButtonSegment(
+                      value: VideoScaleMode.crop,
+                      icon: Icon(Icons.crop_free_rounded),
+                    ),
+                  ],
+                  selected: <VideoScaleMode>{state.settings.videoScaleMode},
+                  onSelectionChanged: (value) =>
+                      state.setVideoScaleMode(value.first),
+                ),
+              ),
+            ],
+          ),
+          const SectionHeader(title: 'Images'),
+          _SettingsCard(
+            children: <Widget>[
+              SwitchListTile(
+                secondary: const Icon(Icons.cloud_off_rounded),
+                title: const Text('允许联网获取封面/歌词'),
+                subtitle: Text(
+                  state.settings.allowOnlineEnhancement
+                      ? '增强模块开启，但仍优先使用本地嵌入信息和缓存。'
+                      : '增强模块关闭，核心功能完全离线运行。',
+                ),
+                value: state.settings.allowOnlineEnhancement,
+                onChanged: state.toggleOnlineEnhancement,
+              ),
+              ListTile(
+                leading: Icon(Icons.offline_pin_rounded, color: scheme.primary),
+                title: const Text('离线优先保护'),
+                subtitle: const Text('关闭后运行时不会调用在线封面/歌词实现。'),
+              ),
+            ],
+          ),
+          const SectionHeader(title: 'Audio'),
+          _SettingsCard(
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.speed_rounded),
+                title: const Text('播放速度'),
+                subtitle: Text('${state.playbackSpeed.toStringAsFixed(1)}x'),
+              ),
+              Slider(
+                min: 0.5,
+                max: 2.0,
+                divisions: 15,
+                label: '${state.playbackSpeed.toStringAsFixed(1)}x',
+                value: state.playbackSpeed,
+                onChanged: state.setPlaybackSpeed,
+              ),
+              ListTile(
+                leading: const Icon(Icons.equalizer_rounded),
+                title: const Text('均衡器预设'),
+                subtitle: Text(
+                  _equalizerPresetLabel(state.settings.equalizerPreset),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: SegmentedButton<EqualizerPreset>(
+                  segments: const <ButtonSegment<EqualizerPreset>>[
+                    ButtonSegment(
+                      value: EqualizerPreset.off,
+                      icon: Icon(Icons.power_settings_new_rounded),
+                    ),
+                    ButtonSegment(
+                      value: EqualizerPreset.bassBoost,
+                      icon: Icon(Icons.graphic_eq_rounded),
+                    ),
+                    ButtonSegment(
+                      value: EqualizerPreset.vocal,
+                      icon: Icon(Icons.record_voice_over_rounded),
+                    ),
+                    ButtonSegment(
+                      value: EqualizerPreset.rock,
+                      icon: Icon(Icons.music_note_rounded),
+                    ),
+                    ButtonSegment(
+                      value: EqualizerPreset.classical,
+                      icon: Icon(Icons.piano_rounded),
+                    ),
+                    ButtonSegment(
+                      value: EqualizerPreset.custom,
+                      icon: Icon(Icons.tune_rounded),
+                    ),
+                  ],
+                  selected: <EqualizerPreset>{
+                    state.settings.equalizerPreset,
+                  },
+                  onSelectionChanged: (value) =>
+                      state.setEqualizerPreset(value.first),
+                ),
+              ),
+              if (state.settings.equalizerPreset == EqualizerPreset.custom)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Column(
+                    children: <Widget>[
+                      for (final band in _equalizerBands.indexed)
+                        Row(
+                          children: <Widget>[
+                            SizedBox(
+                              width: 44,
+                              child: Text(
+                                band.$2,
+                                style: Theme.of(context).textTheme.labelMedium,
+                              ),
+                            ),
+                            Expanded(
+                              child: Slider(
+                                min: -10,
+                                max: 10,
+                                divisions: 20,
+                                label:
+                                    '${state.settings.customEqualizerGains[band.$1].toStringAsFixed(0)} dB',
+                                value: state
+                                    .settings.customEqualizerGains[band.$1],
+                                onChanged: (value) => state
+                                    .setCustomEqualizerGain(band.$1, value),
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+              ListTile(
+                leading: const Icon(Icons.timer_rounded),
+                title: const Text('睡眠定时器'),
+                subtitle: Text(state.sleepTimerLabel),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: <Widget>[
+                    OutlinedButton(
+                      onPressed: () =>
+                          state.setSleepTimer(const Duration(minutes: 15)),
+                      child: const Text('15 分钟'),
+                    ),
+                    OutlinedButton(
+                      onPressed: () =>
+                          state.setSleepTimer(const Duration(minutes: 30)),
+                      child: const Text('30 分钟'),
+                    ),
+                    TextButton(
+                      onPressed: state.cancelSleepTimer,
+                      child: const Text('取消'),
+                    ),
+                  ],
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.repeat_on_rounded),
+                title: const Text('AB 循环'),
+                subtitle: Text(state.abLoopLabel),
+              ),
+              ListTile(
+                leading: const Icon(Icons.lyrics_rounded),
+                title: const Text('歌词偏移'),
+                subtitle: Text(_lyricOffsetLabel(state.settings.lyricOffset)),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: <Widget>[
+                    OutlinedButton.icon(
+                      onPressed: () => state.adjustLyricOffset(
+                        const Duration(milliseconds: -500),
+                      ),
+                      icon: const Icon(Icons.remove_rounded),
+                      label: const Text('500ms'),
+                    ),
+                    TextButton(
+                      onPressed: () => state.adjustLyricOffset(
+                        -state.settings.lyricOffset,
+                      ),
+                      child: const Text('重置'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => state.adjustLyricOffset(
+                        const Duration(milliseconds: 500),
+                      ),
+                      icon: const Icon(Icons.add_rounded),
+                      label: const Text('500ms'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SectionHeader(title: '媒体库'),
+          _SettingsCard(
+            children: <Widget>[
+              ListTile(
+                leading: state.isScanningLibrary
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2.5),
+                      )
+                    : const Icon(Icons.manage_search_rounded),
+                title: const Text('扫描本机媒体'),
+                subtitle: Text(state.libraryStatusMessage),
+                trailing: FilledButton.icon(
+                  onPressed: state.isScanningLibrary
+                      ? null
+                      : () {
+                          state.scanMediaLibrary();
+                        },
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('扫描'),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.folder_open_rounded),
+                title: const Text('包含文件夹'),
+                subtitle: Text(
+                  state.settings.includedFolders.isEmpty
+                      ? '未设置，扫描全部媒体'
+                      : '${state.settings.includedFolders.length} 个路径',
+                ),
+                trailing: IconButton(
+                  tooltip: '添加',
+                  onPressed: () => _showAddIncludedFolderDialog(context),
+                  icon: const Icon(Icons.add_rounded),
+                ),
+              ),
+              if (state.settings.includedFolders.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: state.settings.includedFolders
+                        .map(
+                          (folder) => InputChip(
+                            label: Text(folder),
+                            onDeleted: () => state.removeIncludedFolder(folder),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ListTile(
+                leading: const Icon(Icons.folder_off_rounded),
+                title: const Text('排除文件夹'),
+                subtitle: Text(
+                  state.settings.excludedFolders.isEmpty
+                      ? '未设置'
+                      : '${state.settings.excludedFolders.length} 个路径',
+                ),
+                trailing: IconButton(
+                  tooltip: '添加',
+                  onPressed: () => _showAddExcludedFolderDialog(context),
+                  icon: const Icon(Icons.add_rounded),
+                ),
+              ),
+              if (state.settings.excludedFolders.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: state.settings.excludedFolders
+                        .map(
+                          (folder) => InputChip(
+                            label: Text(folder),
+                            onDeleted: () => state.removeExcludedFolder(folder),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ListTile(
+                leading: const Icon(Icons.filter_alt_rounded),
+                title: const Text('最短音频时长'),
+                subtitle: Text(
+                  '当前默认 ${state.settings.minimumAudioDuration.inSeconds} 秒',
+                ),
+              ),
+              Slider(
+                min: 0,
+                max: 300,
+                divisions: 20,
+                label: '${state.settings.minimumAudioDuration.inSeconds} 秒',
+                value: state.settings.minimumAudioDuration.inSeconds
+                    .clamp(0, 300)
+                    .toDouble(),
+                onChanged: (value) => state.setMinimumAudioDuration(
+                  Duration(seconds: value.round()),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.backup_rounded),
+                title: const Text('Backup & Restore'),
+                subtitle: Text(state.backupStatusMessage),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: <Widget>[
+                    FilledButton.icon(
+                      onPressed: state.createBackup,
+                      icon: const Icon(Icons.save_alt_rounded),
+                      label: const Text('创建备份'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => _confirmRestoreBackup(context),
+                      icon: const Icon(Icons.restore_rounded),
+                      label: const Text('恢复最近备份'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SectionHeader(title: 'About'),
+          const _SettingsCard(
+            children: <Widget>[
+              ListTile(
+                leading: Icon(Icons.info_rounded),
+                title: Text('声影 EchoFrame'),
+                subtitle: Text('Android 本地媒体核心链路 • Flutter OHOS 兼容构建'),
+              ),
+              ListTile(
+                leading: Icon(Icons.favorite_rounded),
+                title: Text('致谢'),
+                subtitle: Text('设计参考 Retro Music 与主流本地播放器体验'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _themeLabel(ThemeMode mode) {
+    return switch (mode) {
+      ThemeMode.system => '跟随系统',
+      ThemeMode.light => '浅色',
+      ThemeMode.dark => '深色',
+    };
+  }
+
+  String _lyricOffsetLabel(Duration offset) {
+    final milliseconds = offset.inMilliseconds;
+    if (milliseconds == 0) {
+      return '0ms';
+    }
+    return '${milliseconds > 0 ? '+' : ''}${milliseconds}ms';
+  }
+
+  String _equalizerPresetLabel(EqualizerPreset preset) {
+    return switch (preset) {
+      EqualizerPreset.off => '关闭',
+      EqualizerPreset.bassBoost => '低音增强',
+      EqualizerPreset.vocal => '人声',
+      EqualizerPreset.rock => '摇滚',
+      EqualizerPreset.classical => '古典',
+      EqualizerPreset.custom => '自定义',
+    };
+  }
+
+  String _subtitleTextColorLabel(SubtitleTextColor color) {
+    return switch (color) {
+      SubtitleTextColor.white => '白色',
+      SubtitleTextColor.yellow => '黄色',
+      SubtitleTextColor.cyan => '青色',
+    };
+  }
+
+  String _subtitlePositionLabel(SubtitlePosition position) {
+    return switch (position) {
+      SubtitlePosition.low => '靠下',
+      SubtitlePosition.middle => '居中',
+      SubtitlePosition.high => '靠上',
+    };
+  }
+
+  String _videoScaleModeLabel(VideoScaleMode mode) {
+    return switch (mode) {
+      VideoScaleMode.fit => '适应屏幕',
+      VideoScaleMode.stretch => '拉伸',
+      VideoScaleMode.crop => '裁剪填充',
+    };
+  }
+
+  Future<void> _showAddExcludedFolderDialog(BuildContext context) async {
+    final controller = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('添加排除文件夹'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '/storage/emulated/0/Recordings',
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('添加'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value != null) {
+      state.addExcludedFolder(value);
+    }
+  }
+
+  Future<void> _showAddIncludedFolderDialog(BuildContext context) async {
+    final controller = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('添加包含文件夹'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '/storage/emulated/0/Music',
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('添加'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value != null) {
+      state.addIncludedFolder(value);
+    }
+  }
+
+  Future<void> _confirmRestoreBackup(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('恢复最近备份'),
+        content: const Text('会用最近的备份覆盖当前播放列表、设置和本地媒体索引。'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('恢复'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await state.restoreLatestBackup();
+    }
+  }
+}
+
+class _SettingsCard extends StatelessWidget {
+  const _SettingsCard({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+      ),
+      child: Column(children: children),
+    );
+  }
+}
