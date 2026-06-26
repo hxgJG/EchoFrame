@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../core/models/media_item.dart';
 import '../music/now_playing_page.dart';
+import '../search/search_page.dart';
 import '../../shared/widgets/media_tile.dart';
 import '../../shared/widgets/section_header.dart';
 
@@ -39,6 +40,11 @@ class _VideoPageState extends State<VideoPage>
         title: const Text('视频库'),
         actions: <Widget>[
           IconButton(
+            tooltip: '搜索',
+            onPressed: () => _openSearch(context, state),
+            icon: const Icon(Icons.search_rounded),
+          ),
+          IconButton(
             tooltip: '随机播放视频',
             onPressed: () => state.shuffleAll(MediaKind.video),
             icon: const Icon(Icons.shuffle_rounded),
@@ -61,6 +67,12 @@ class _VideoPageState extends State<VideoPage>
       ),
     );
   }
+}
+
+void _openSearch(BuildContext context, EchoAppState state) {
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(builder: (_) => SearchPage(state: state)),
+  );
 }
 
 class _VideoList extends StatelessWidget {

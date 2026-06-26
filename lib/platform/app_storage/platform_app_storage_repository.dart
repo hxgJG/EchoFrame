@@ -6,7 +6,7 @@ import 'app_storage_repository.dart';
 
 class PlatformAppStorageRepository implements AppStorageRepository {
   const PlatformAppStorageRepository({
-    MethodChannel channel = const MethodChannel('echoframe/app_storage'),
+    MethodChannel channel = const MethodChannel('lumio/app_storage'),
   }) : _channel = channel;
 
   final MethodChannel _channel;

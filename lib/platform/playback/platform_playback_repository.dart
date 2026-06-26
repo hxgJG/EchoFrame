@@ -8,7 +8,7 @@ import 'playback_repository.dart';
 
 class PlatformPlaybackRepository implements PlaybackRepository {
   PlatformPlaybackRepository({
-    MethodChannel channel = const MethodChannel('echoframe/playback'),
+    MethodChannel channel = const MethodChannel('lumio/playback'),
   }) : _channel = channel {
     if (Platform.isAndroid) {
       _channel.setMethodCallHandler(_handleMethodCall);

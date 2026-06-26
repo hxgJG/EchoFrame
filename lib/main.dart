@@ -6,17 +6,16 @@ import 'features/music/music_home_page.dart';
 import 'features/music/music_library_page.dart';
 import 'features/music/now_playing_page.dart';
 import 'features/music/playlists_page.dart';
-import 'features/search/search_page.dart';
 import 'features/settings/settings_page.dart';
 import 'features/video/video_page.dart';
 import 'shared/widgets/mini_player.dart';
 
 void main() {
-  runApp(EchoFrameApp(state: EchoAppState()));
+  runApp(LumioApp(state: EchoAppState()));
 }
 
-class EchoFrameApp extends StatelessWidget {
-  const EchoFrameApp({super.key, required this.state});
+class LumioApp extends StatelessWidget {
+  const LumioApp({super.key, required this.state});
 
   final EchoAppState state;
 
@@ -26,20 +25,20 @@ class EchoFrameApp extends StatelessWidget {
       animation: state,
       builder: (context, _) {
         return MaterialApp(
-          title: '声影 EchoFrame',
           debugShowCheckedModeBanner: false,
           theme: EchoTheme.light(),
           darkTheme: EchoTheme.dark(),
           themeMode: state.settings.themeMode,
-          home: EchoFrameShell(state: state),
+          title: '忆光 Lumio',
+          home: LumioShell(state: state),
         );
       },
     );
   }
 }
 
-class EchoFrameShell extends StatelessWidget {
-  const EchoFrameShell({super.key, required this.state});
+class LumioShell extends StatelessWidget {
+  const LumioShell({super.key, required this.state});
 
   final EchoAppState state;
 
@@ -50,7 +49,6 @@ class EchoFrameShell extends StatelessWidget {
       AppSection.music => MusicLibraryPage(state: state),
       AppSection.playlists => PlaylistsPage(state: state),
       AppSection.video => VideoPage(state: state),
-      AppSection.search => SearchPage(state: state),
       AppSection.settings => SettingsPage(state: state),
     };
 
@@ -69,7 +67,7 @@ class EchoFrameShell extends StatelessWidget {
               NavigationDestination(
                 icon: Icon(Icons.home_outlined),
                 selectedIcon: Icon(Icons.home_rounded),
-                label: 'For You',
+                label: '首页',
               ),
               NavigationDestination(
                 icon: Icon(Icons.library_music_outlined),
@@ -85,11 +83,6 @@ class EchoFrameShell extends StatelessWidget {
                 icon: Icon(Icons.movie_outlined),
                 selectedIcon: Icon(Icons.movie_rounded),
                 label: '视频',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.search_rounded),
-                selectedIcon: Icon(Icons.manage_search_rounded),
-                label: '搜索',
               ),
               NavigationDestination(
                 icon: Icon(Icons.tune_rounded),

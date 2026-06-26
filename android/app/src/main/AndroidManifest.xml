@@ -7,7 +7,7 @@
         android:maxSdkVersion="32" />
 
     <application
-        android:label="echoframe"
+        android:label="忆光"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

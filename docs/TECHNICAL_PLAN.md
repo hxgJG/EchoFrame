@@ -1,10 +1,10 @@
-# EchoFrame 技术方案
+# 忆光 Lumio 技术方案
 
 > 基于 `docs/EchoFrame_PRD_v0.5.md` v0.5 整理。本文作为产品需求到工程实现的主技术文档，后续阶段计划见 `docs/superpowers/plans/2026-06-25-echoframe-mvp.md`。
 
 ## 1. 背景与目标
 
-声影 EchoFrame 是一款离线优先的本地音视频播放器。首期按 PRD 的 D7 决策集中做好 Android 端，iOS 与 HarmonyOS 延后；核心功能必须在完全无网络环境下可用，在线封面与歌词只作为可关闭的增强模块。
+忆光 Lumio 是一款离线优先的本地音视频播放器。首期按 PRD 的 D7 决策集中做好 Android 端，iOS 与 HarmonyOS 延后；核心功能必须在完全无网络环境下可用，在线封面与歌词只作为可关闭的增强模块。
 
 当前工程已完成 Flutter App 基础架构，并优先完成 Android 端本地媒体核心链路：媒体库浏览、MediaStore 扫描、本地 JSON 持久化、播放列表管理、Now Playing、Mini 播放器、基础设置、备份恢复与在线增强开关。Android 音视频播放已通过平台通道接入原生 `MediaPlayer`，视频画面使用 Flutter Texture 承载，并提供 Android PiP 入口、续播进度、自动连播、本地 `.srt` 字幕覆盖与样式设置、基础 `.ass/.ssa` 字幕解析、视频画面适应/拉伸/裁剪填充模式、全屏播放、横屏锁定、全屏同步控制器和基础手势控制；Android 音频焦点、耳机拔出暂停、基础媒体键处理、通知栏媒体控制、本地 `.lrc` 歌词同步、睡眠定时器渐弱淡出、系统 Equalizer 预设和自定义五段 EQ 已接入。Android 扫描包含/排除文件夹、音乐/视频文件夹浏览、最短音频时长过滤、文件大小排序、App 内批量加入队列/播放列表、播放列表批量移除、队列拖拽排序、播放列表条目拖拽排序、媒体文件详情和 Android 系统分享已接入；前台服务/锁屏完整展示、iOS 导入和 HarmonyOS 原生媒体库桥接仍按后续阶段推进。
 
@@ -61,7 +61,7 @@ lib/platform/
 
 ## 4. 当前状态与问题定义
 
-当前仓库已经从 PRD 创建出 Flutter App，并按阶段接入 Android 媒体库扫描、本地持久化、扫描包含/排除文件夹、音乐/视频文件夹浏览、真实音视频播放、视频 Texture/PiP 入口、视频续播/自动连播、本地 `.srt` 字幕与样式设置、基础 `.ass/.ssa` 字幕解析、视频画面适应/拉伸/裁剪填充模式、视频全屏/横屏锁定/同步控制器/基础手势、备份恢复、本地 `.lrc` 歌词、睡眠定时器渐弱淡出、Android Equalizer 预设/自定义 EQ、文件大小排序、App 内批量媒体操作、队列/播放列表条目拖拽排序、媒体文件详情和 Android 系统分享。
+当前仓库已经从 PRD 创建出 Flutter App，并按阶段接入 Android 媒体库扫描、本地持久化、扫描包含/排除文件夹、音乐/视频文件夹浏览、真实音视频播放、视频 Texture/PiP 入口、视频续播/自动连播、本地 `.srt` 字幕与样式设置、基础 `.ass/.ssa` 字幕解析、视频画面适应/拉伸/裁剪填充模式、视频全屏/横屏锁定/同步控制器/基础手势、备份恢复、本地 `.lrc` 歌词、睡眠定时器渐弱淡出、Android Equalizer 预设/自定义 EQ、文件大小排序、App 内批量媒体操作、队列/播放列表条目拖拽排序、媒体文件详情和 Android 系统分享。应用品牌已更新为「忆光 / Lumio」，Android/iOS/HarmonyOS 包名统一为 `com.hxg.lumio`。
 
 当前阶段继续按 PRD 和阶段计划推进未完成能力，并保持 Android APK 与 HarmonyOS HAP 构建可验证。
 
@@ -71,7 +71,7 @@ lib/platform/
 
 - 仓库内有清晰技术方案和分阶段实施计划。
 - App 可以通过 `flutter analyze` 做静态检查。
-- App 首页、音乐列表、视频列表、Now Playing、搜索、设置等核心导航可运行。
+- App 首页、音乐列表、视频列表、Now Playing、独立搜索页、设置等核心导航可运行。
 - 所有当前演示数据和交互均离线可用；在线增强开关关闭时不影响任何界面。
 
 ## 5. 阶段规划
@@ -80,7 +80,8 @@ lib/platform/
 
 - 创建 Flutter Android/iOS/OHOS 兼容工程骨架。
 - 建立应用主题、底部导航、音乐/视频模式切换、Mini 播放器。
-- 使用离线 seed 数据实现 For You、Songs、Albums、Artists、Folders、Playlists、Now Playing、Videos、Search、Settings。
+- 使用离线 seed 数据实现 首页、Songs、Albums、Artists、Folders、Playlists、Now Playing、Videos、独立 Search 页面、Settings。
+- 底部导航保留 首页/列表/歌单/视频/设置；搜索不占用底部标签，由首页、列表页、视频页顶部入口打开。
 - 实现播放状态、收藏、播放次数、最近播放、随机播放、歌词视图切换等轻量状态。
 - 设置页提供离线优先说明、主题模式切换、在线封面/歌词总开关、扫描过滤入口占位。
 

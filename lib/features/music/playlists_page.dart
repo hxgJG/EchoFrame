@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../core/models/media_item.dart';
 import '../../core/models/playlist.dart';
+import '../search/search_page.dart';
 import '../../shared/widgets/media_tile.dart';
 import '../../shared/widgets/section_header.dart';
 
@@ -20,6 +21,11 @@ class PlaylistsPage extends StatelessWidget {
       appBar: AppBar(
         title: const Text('播放列表'),
         actions: <Widget>[
+          IconButton(
+            tooltip: '搜索',
+            onPressed: () => _openSearch(context),
+            icon: const Icon(Icons.search_rounded),
+          ),
           IconButton(
             tooltip: '新建播放列表',
             onPressed: () => _createPlaylist(context),
@@ -103,6 +109,12 @@ class PlaylistsPage extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  void _openSearch(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => SearchPage(state: state)),
     );
   }
 

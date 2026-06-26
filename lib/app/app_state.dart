@@ -14,7 +14,7 @@ import '../platform/playback/playback_repository.dart';
 import '../platform/playback/platform_playback_repository.dart';
 import 'seed_data.dart';
 
-enum AppSection { home, music, playlists, video, search, settings }
+enum AppSection { home, music, playlists, video, settings }
 
 enum MusicSort { title, addedAt, duration, playCount, fileSize }
 

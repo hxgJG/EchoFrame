@@ -1,4 +1,4 @@
-package com.hxg.echoframe.echoframe
+package com.hxg.lumio
 
 import android.Manifest
 import android.app.Notification
@@ -35,14 +35,14 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 class MainActivity : FlutterActivity() {
-    private val notificationChannelId = "echoframe_playback"
+    private val notificationChannelId = "lumio_playback"
     private val playbackNotificationId = 2408
-    private val actionPlayPause = "com.hxg.echoframe.PLAY_PAUSE"
-    private val actionNext = "com.hxg.echoframe.NEXT"
-    private val actionPrevious = "com.hxg.echoframe.PREVIOUS"
-    private val mediaLibraryChannelName = "echoframe/media_library"
-    private val appStorageChannelName = "echoframe/app_storage"
-    private val playbackChannelName = "echoframe/playback"
+    private val actionPlayPause = "com.hxg.lumio.PLAY_PAUSE"
+    private val actionNext = "com.hxg.lumio.NEXT"
+    private val actionPrevious = "com.hxg.lumio.PREVIOUS"
+    private val mediaLibraryChannelName = "lumio/media_library"
+    private val appStorageChannelName = "lumio/app_storage"
+    private val playbackChannelName = "lumio/playback"
     private val permissionRequestCode = 2407
     private var pendingScanResult: MethodChannel.Result? = null
     private var pendingScanArguments: Any? = null
@@ -52,7 +52,7 @@ class MainActivity : FlutterActivity() {
     private var videoTextureEntry: TextureRegistry.SurfaceTextureEntry? = null
     private var videoSurface: Surface? = null
     private var currentPlaybackMediaId: String? = null
-    private var currentPlaybackTitle: String = "EchoFrame"
+    private var currentPlaybackTitle: String = "Lumio"
     private var currentPlaybackArtist: String = "Local media"
     private var currentPlaybackAlbum: String = ""
     private var playbackSpeed: Float = 1.0f
@@ -132,7 +132,7 @@ class MainActivity : FlutterActivity() {
             val values = arguments as? Map<*, *> ?: emptyMap<String, Any?>()
             val mediaId = values["mediaId"]?.toString().orEmpty()
             val kind = values["kind"]?.toString().orEmpty()
-            val title = values["title"]?.toString().orEmpty().ifBlank { "EchoFrame media" }
+            val title = values["title"]?.toString().orEmpty().ifBlank { "Lumio media" }
             val uri = mediaStoreUri(mediaId, kind)
             if (uri == null) {
                 result.error("shareUnsupported", "只能分享 Android 媒体库扫描到的本地媒体。", null)
@@ -168,7 +168,7 @@ class MainActivity : FlutterActivity() {
             val value = arguments as? Map<*, *> ?: emptyMap<String, Any?>()
             val text = JSONObject(value).toString()
             appStateFile().writeText(text)
-            val file = File(backupDirectory(), "echoframe-backup-${System.currentTimeMillis()}.json")
+            val file = File(backupDirectory(), "lumio-backup-${System.currentTimeMillis()}.json")
             file.writeText(text)
             result.success(backupInfo(file))
         } catch (error: Exception) {
@@ -309,7 +309,7 @@ class MainActivity : FlutterActivity() {
         val path = values["path"]?.toString().orEmpty()
         val mediaId = values["mediaId"]?.toString().orEmpty()
         val kind = values["kind"]?.toString().orEmpty()
-        currentPlaybackTitle = values["title"]?.toString().orEmpty().ifBlank { "EchoFrame" }
+        currentPlaybackTitle = values["title"]?.toString().orEmpty().ifBlank { "Lumio" }
         currentPlaybackArtist = values["artist"]?.toString().orEmpty().ifBlank { "Local media" }
         currentPlaybackAlbum = values["album"]?.toString().orEmpty()
         val startPositionMs = (values["positionMs"] as? Number)?.toInt()
@@ -572,7 +572,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun setupMediaSession() {
-        mediaSession = MediaSession(this, "EchoFrame").apply {
+        mediaSession = MediaSession(this, "Lumio").apply {
             setCallback(
                 object : MediaSession.Callback() {
                     override fun onPlay() {
@@ -627,7 +627,7 @@ class MainActivity : FlutterActivity() {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channel = NotificationChannel(
             notificationChannelId,
-            "EchoFrame playback",
+            "Lumio playback",
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
             description = "Local media playback controls"
@@ -668,7 +668,7 @@ class MainActivity : FlutterActivity() {
                 listOf(currentPlaybackArtist, currentPlaybackAlbum)
                     .filter { it.isNotBlank() }
                     .joinToString(" • ")
-                    .ifBlank { "EchoFrame" },
+                    .ifBlank { "Lumio" },
             )
             .setContentIntent(contentIntent)
             .setOngoing(isPlaying)
@@ -1051,12 +1051,12 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun appStateFile(): File {
-        return File(filesDir, "echoframe_state.json")
+        return File(filesDir, "lumio_state.json")
     }
 
     private fun backupDirectory(): File {
         val documents = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) ?: filesDir
-        return File(documents, "EchoFrame/backups").apply { mkdirs() }
+        return File(documents, "Lumio/backups").apply { mkdirs() }
     }
 
     private fun latestBackupFile(): File? {

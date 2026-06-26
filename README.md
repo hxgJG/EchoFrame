@@ -1,6 +1,6 @@
-# echoframe
+# Lumio 忆光
 
-A new Flutter project.
+Lumio（忆光）是一款离线优先的本地音视频播放器，面向 Android 与 HarmonyOS 兼容构建。
 
 ## Getting Started
 

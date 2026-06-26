@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../core/models/media_item.dart';
+import '../search/search_page.dart';
 import '../../shared/widgets/media_tile.dart';
 import '../../shared/widgets/metric_card.dart';
 import '../../shared/widgets/section_header.dart';
@@ -34,13 +35,13 @@ class MusicHomePage extends StatelessWidget {
               child: const Icon(Icons.graphic_eq_rounded, color: Colors.white),
             ),
             const SizedBox(width: 10),
-            const Text('声影'),
+            const Text('忆光'),
           ],
         ),
         actions: <Widget>[
           IconButton(
             tooltip: '搜索',
-            onPressed: () => state.selectSection(AppSection.search),
+            onPressed: () => _openSearch(context, state),
             icon: const Icon(Icons.search_rounded),
           ),
           IconButton(
@@ -91,14 +92,14 @@ class MusicHomePage extends StatelessWidget {
                 MetricCard(
                   icon: Icons.shuffle_rounded,
                   label: '随机全部',
-                  value: 'Shuffle',
+                  value: '随机',
                   color: const Color(0xFFFFB020),
                   onTap: () => state.shuffleAll(MediaKind.audio),
                 ),
               ],
             ),
             SectionHeader(
-              title: 'Suggestions',
+              title: '推荐',
               actionLabel: '全部歌曲',
               onAction: () => state.selectSection(AppSection.music),
             ),
@@ -164,6 +165,12 @@ class MusicHomePage extends StatelessWidget {
       ),
     );
   }
+}
+
+void _openSearch(BuildContext context, EchoAppState state) {
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(builder: (_) => SearchPage(state: state)),
+  );
 }
 
 class _EmptyMusicPanel extends StatelessWidget {

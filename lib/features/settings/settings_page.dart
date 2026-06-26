@@ -488,12 +488,12 @@ class SettingsPage extends StatelessWidget {
               ),
             ],
           ),
-          const SectionHeader(title: 'About'),
+          const SectionHeader(title: '关于'),
           const _SettingsCard(
             children: <Widget>[
               ListTile(
                 leading: Icon(Icons.info_rounded),
-                title: Text('声影 EchoFrame'),
+                title: Text('忆光 Lumio'),
                 subtitle: Text('Android 本地媒体核心链路 • Flutter OHOS 兼容构建'),
               ),
               ListTile(

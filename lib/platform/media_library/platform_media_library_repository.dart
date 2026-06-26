@@ -10,7 +10,7 @@ import 'media_library_repository.dart';
 
 class PlatformMediaLibraryRepository implements MediaLibraryRepository {
   const PlatformMediaLibraryRepository({
-    MethodChannel channel = const MethodChannel('echoframe/media_library'),
+    MethodChannel channel = const MethodChannel('lumio/media_library'),
   }) : _channel = channel;
 
   final MethodChannel _channel;

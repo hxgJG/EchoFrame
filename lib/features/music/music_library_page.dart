@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
 import '../../core/models/media_item.dart';
+import '../search/search_page.dart';
 import '../../shared/widgets/media_tile.dart';
 import '../../shared/widgets/section_header.dart';
 
@@ -52,7 +53,7 @@ class _MusicLibraryPageState extends State<MusicLibraryPage>
           ),
           IconButton(
             tooltip: '搜索',
-            onPressed: () => state.selectSection(AppSection.search),
+            onPressed: () => _openSearch(context, state),
             icon: const Icon(Icons.search_rounded),
           ),
         ],
@@ -84,6 +85,12 @@ class _MusicLibraryPageState extends State<MusicLibraryPage>
       ),
     );
   }
+}
+
+void _openSearch(BuildContext context, EchoAppState state) {
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(builder: (_) => SearchPage(state: state)),
+  );
 }
 
 class _SongsTab extends StatefulWidget {
