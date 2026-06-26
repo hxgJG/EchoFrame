@@ -109,7 +109,7 @@ class MusicHomePage extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             SizedBox(
-              height: 118,
+              height: 124,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: mostPlayed.length,
@@ -348,8 +348,8 @@ class _HorizontalAlbum extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            MediaArtwork(item: item, size: 76),
-            const SizedBox(height: 8),
+            MediaArtwork(item: item, size: 68),
+            const SizedBox(height: 6),
             Text(
               item.album,
               maxLines: 1,

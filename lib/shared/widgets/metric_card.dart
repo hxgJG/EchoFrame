@@ -24,7 +24,7 @@ class MetricCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(8),
       onTap: onTap,
       child: Ink(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: scheme.surface,
           borderRadius: BorderRadius.circular(8),
@@ -35,13 +35,13 @@ class MetricCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: <Widget>[
-            Icon(icon, color: color),
-            const SizedBox(height: 10),
+            Icon(icon, color: color, size: 22),
+            const SizedBox(height: 6),
             Text(
               value,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: textTheme.titleLarge?.copyWith(
+              style: textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w900,
               ),
             ),
