@@ -11,11 +11,12 @@ import '../../shared/widgets/section_header.dart';
 class MusicHomePage extends StatelessWidget {
   const MusicHomePage({super.key, required this.state});
 
-  final EchoAppState state;
+  final LumioAppState state;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final audioColor = LumioTheme.audioColor(scheme.brightness);
     final textTheme = Theme.of(context).textTheme;
     final recent = state.recentlyAdded;
     final mostPlayed = state.mostPlayed;
@@ -25,14 +26,17 @@ class MusicHomePage extends StatelessWidget {
       appBar: AppBar(
         title: Row(
           children: <Widget>[
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: scheme.primary,
-                borderRadius: BorderRadius.circular(8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.asset(
+                'assets/branding/lumio_logo_128.png',
+                width: 34,
+                height: 34,
+                cacheWidth: 102,
+                cacheHeight: 102,
+                fit: BoxFit.cover,
+                filterQuality: FilterQuality.medium,
               ),
-              child: const Icon(Icons.graphic_eq_rounded, color: Colors.white),
             ),
             const SizedBox(width: 10),
             const Text('忆光'),
@@ -72,28 +76,28 @@ class MusicHomePage extends StatelessWidget {
                   icon: Icons.history_rounded,
                   label: '最近播放',
                   value: '${mostPlayed.first.playCount} 次',
-                  color: scheme.primary,
+                  color: audioColor,
                   onTap: () => state.play(mostPlayed.first),
                 ),
                 MetricCard(
                   icon: Icons.fiber_new_rounded,
                   label: '最近添加',
                   value: '${recent.length} 首',
-                  color: EchoTheme.coral,
+                  color: const Color(0xFFFF9A1A),
                   onTap: () => state.play(recent.first),
                 ),
                 MetricCard(
                   icon: Icons.local_fire_department_rounded,
                   label: '最多播放',
                   value: mostPlayed.first.title,
-                  color: EchoTheme.teal,
+                  color: const Color(0xFFF27600),
                   onTap: () => state.play(mostPlayed.first),
                 ),
                 MetricCard(
                   icon: Icons.shuffle_rounded,
                   label: '随机全部',
                   value: '随机',
-                  color: const Color(0xFFFFB020),
+                  color: const Color(0xFFFFC044),
                   onTap: () => state.shuffleAll(MediaKind.audio),
                 ),
               ],
@@ -125,7 +129,7 @@ class MusicHomePage extends StatelessWidget {
               ),
             ),
             SectionHeader(
-              title: 'Recent artists',
+              title: '最近艺术家',
               actionLabel: '查看全部',
               onAction: () => state.selectSection(AppSection.music),
             ),
@@ -146,7 +150,7 @@ class MusicHomePage extends StatelessWidget {
                 },
               ),
             ),
-            const SectionHeader(title: 'Last added'),
+            const SectionHeader(title: '最近添加'),
             ...recent.map(
               (item) => MediaTile(item: item, onTap: () => state.play(item)),
             ),
@@ -167,7 +171,7 @@ class MusicHomePage extends StatelessWidget {
   }
 }
 
-void _openSearch(BuildContext context, EchoAppState state) {
+void _openSearch(BuildContext context, LumioAppState state) {
   Navigator.of(context).push(
     MaterialPageRoute<void>(builder: (_) => SearchPage(state: state)),
   );
@@ -181,6 +185,7 @@ class _EmptyMusicPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final audioColor = LumioTheme.audioColor(scheme.brightness);
     final textTheme = Theme.of(context).textTheme;
     return Container(
       padding: const EdgeInsets.all(18),
@@ -191,7 +196,7 @@ class _EmptyMusicPanel extends StatelessWidget {
       ),
       child: Column(
         children: <Widget>[
-          Icon(Icons.library_music_outlined, color: scheme.primary, size: 42),
+          Icon(Icons.library_music_outlined, color: audioColor, size: 42),
           const SizedBox(height: 10),
           Text('还没有音频媒体', style: textTheme.titleMedium),
           const SizedBox(height: 6),
@@ -223,20 +228,23 @@ class _WelcomePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final audioColor = LumioTheme.audioColor(scheme.brightness);
     final textTheme = Theme.of(context).textTheme;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: scheme.primaryContainer,
+        color: audioColor.withValues(
+          alpha: scheme.brightness == Brightness.dark ? 0.18 : 0.11,
+        ),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: <Widget>[
           CircleAvatar(
             radius: 26,
-            backgroundColor: scheme.primary,
+            backgroundColor: audioColor,
             child: const Text(
-              'E',
+              '忆',
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w900,
@@ -250,7 +258,7 @@ class _WelcomePanel extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  'Welcome, Echo',
+                  '欢迎回到忆光',
                   style: textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.w900,
                   ),
@@ -259,7 +267,7 @@ class _WelcomePanel extends StatelessWidget {
                 Text(
                   '$totalSongs 首本地歌曲已准备好',
                   style: textTheme.bodyMedium?.copyWith(
-                    color: scheme.onPrimaryContainer.withValues(alpha: 0.78),
+                    color: scheme.onSurfaceVariant,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -286,6 +294,7 @@ class _SuggestionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final audioColor = LumioTheme.audioColor(scheme.brightness);
     final textTheme = Theme.of(context).textTheme;
     return InkWell(
       borderRadius: BorderRadius.circular(8),
@@ -323,6 +332,12 @@ class _SuggestionCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: audioColor,
+                      foregroundColor: scheme.brightness == Brightness.dark
+                          ? LumioTheme.night
+                          : Colors.white,
+                    ),
                     onPressed: onPlay,
                     icon: const Icon(Icons.play_arrow_rounded),
                     label: const Text('播放'),

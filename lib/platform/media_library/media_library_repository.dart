@@ -1,7 +1,9 @@
 import '../../core/models/media_item.dart';
+import 'media_file_operation.dart';
 
 enum MediaLibraryScanStatus {
   completed,
+  cancelled,
   permissionDenied,
   unsupported,
   failed,
@@ -47,4 +49,8 @@ abstract class MediaLibraryRepository {
   Future<MediaLibraryScanResult> scan(MediaLibraryScanFilter filter);
 
   Future<MediaLibraryScanResult> restoreLastScan();
+
+  Future<MediaFileOperationResult> performFileOperation(
+    MediaFileOperationRequest request,
+  );
 }

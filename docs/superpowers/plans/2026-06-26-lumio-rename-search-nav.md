@@ -69,7 +69,7 @@
 
 **Files:**
 - Modify: `docs/TECHNICAL_PLAN.md`
-- Modify: `docs/EchoFrame_PRD_v0.5.md`
+- Modify: `docs/Lumio_PRD_v0.5.md`
 - Modify only touched code if verification finds issues.
 
 - [x] **Step 1: Update docs for 忆光 / Lumio and navigation**

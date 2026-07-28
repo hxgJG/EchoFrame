@@ -11,14 +11,25 @@ class PlatformAppStorageRepository implements AppStorageRepository {
 
   final MethodChannel _channel;
 
+  bool get _isSupportedPlatform => Platform.isAndroid || Platform.isOhos;
+
   @override
   Future<Map<String, Object?>?> load() async {
-    if (!Platform.isAndroid) {
+    if (!_isSupportedPlatform) {
       return null;
     }
     try {
-      final value = await _channel.invokeMapMethod<String, Object?>('load');
-      return value;
+      final merged = <String, Object?>{};
+      for (final partition in AppStoragePartition.values) {
+        final value = await _channel.invokeMapMethod<String, Object?>(
+          'loadPartition',
+          <String, Object?>{'partition': partition.name},
+        );
+        if (value != null) {
+          merged.addAll(value);
+        }
+      }
+      return merged.isEmpty ? null : merged;
     } on MissingPluginException {
       return null;
     } on PlatformException {
@@ -27,12 +38,25 @@ class PlatformAppStorageRepository implements AppStorageRepository {
   }
 
   @override
-  Future<void> save(Map<String, Object?> value) async {
-    if (!Platform.isAndroid) {
+  Future<void> save(
+    Map<String, Object?> value, {
+    required Set<AppStoragePartition> partitions,
+  }) async {
+    if (!_isSupportedPlatform) {
       return;
     }
     try {
-      await _channel.invokeMethod<void>('save', value);
+      await Future.wait(
+        partitions.map(
+          (partition) => _channel.invokeMethod<void>(
+            'savePartition',
+            <String, Object?>{
+              'partition': partition.name,
+              'value': appStoragePartitionValue(value, partition),
+            },
+          ),
+        ),
+      );
     } on MissingPluginException {
       return;
     } on PlatformException {
@@ -42,7 +66,7 @@ class PlatformAppStorageRepository implements AppStorageRepository {
 
   @override
   Future<AppBackupInfo?> createBackup(Map<String, Object?> value) async {
-    if (!Platform.isAndroid) {
+    if (!_isSupportedPlatform) {
       return null;
     }
     try {
@@ -60,7 +84,7 @@ class PlatformAppStorageRepository implements AppStorageRepository {
 
   @override
   Future<Map<String, Object?>?> restoreLatestBackup() async {
-    if (!Platform.isAndroid) {
+    if (!_isSupportedPlatform) {
       return null;
     }
     try {
@@ -74,7 +98,7 @@ class PlatformAppStorageRepository implements AppStorageRepository {
 
   @override
   Future<AppBackupInfo?> latestBackup() async {
-    if (!Platform.isAndroid) {
+    if (!_isSupportedPlatform) {
       return null;
     }
     try {
@@ -113,4 +137,28 @@ class PlatformAppStorageRepository implements AppStorageRepository {
     }
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
+}
+
+Map<String, Object?> appStoragePartitionValue(
+  Map<String, Object?> value,
+  AppStoragePartition partition,
+) {
+  return switch (partition) {
+    AppStoragePartition.library => <String, Object?>{
+        'schemaVersion': value['schemaVersion'],
+        'audioItems': value['audioItems'],
+        'videoItems': value['videoItems'],
+      },
+    AppStoragePartition.playlists => <String, Object?>{
+        'schemaVersion': value['schemaVersion'],
+        'playlists': value['playlists'],
+      },
+    AppStoragePartition.session => <String, Object?>{
+        for (final entry in value.entries)
+          if (entry.key != 'audioItems' &&
+              entry.key != 'videoItems' &&
+              entry.key != 'playlists')
+            entry.key: entry.value,
+      },
+  };
 }

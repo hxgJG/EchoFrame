@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
+import '../../app/theme.dart';
 import '../../core/models/media_item.dart';
 import 'media_tile.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key, required this.state, required this.onExpand});
 
-  final EchoAppState state;
+  final LumioAppState state;
   final VoidCallback onExpand;
 
   @override
@@ -17,6 +18,7 @@ class MiniPlayer extends StatelessWidget {
       return const SizedBox.shrink();
     }
     final scheme = Theme.of(context).colorScheme;
+    final mediaColor = LumioTheme.mediaColor(item.kind, scheme.brightness);
     final textTheme = Theme.of(context).textTheme;
     final fraction = item.duration.inMilliseconds == 0
         ? 0.0
@@ -38,6 +40,7 @@ class MiniPlayer extends StatelessWidget {
               LinearProgressIndicator(
                 minHeight: 3,
                 value: fraction.clamp(0, 1),
+                color: mediaColor,
                 backgroundColor: scheme.surfaceContainerHighest,
               ),
               Padding(
@@ -79,7 +82,7 @@ class MiniPlayer extends StatelessWidget {
                         state.isPlaying
                             ? Icons.pause_circle_filled_rounded
                             : Icons.play_circle_fill_rounded,
-                        color: scheme.primary,
+                        color: mediaColor,
                         size: 34,
                       ),
                     ),

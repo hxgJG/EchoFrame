@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
-import '../../core/models/echo_settings.dart';
+import '../../app/theme.dart';
+import '../../core/models/lumio_settings.dart';
 import '../../core/models/media_item.dart';
 import '../../shared/widgets/section_header.dart';
 
@@ -10,7 +11,7 @@ const List<String> _equalizerBands = <String>['60', '230', '910', '4k', '14k'];
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key, required this.state});
 
-  final EchoAppState state;
+  final LumioAppState state;
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +21,7 @@ class SettingsPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
         children: <Widget>[
-          const SectionHeader(title: 'Look and feel'),
+          const SectionHeader(title: '外观'),
           _SettingsCard(
             children: <Widget>[
               ListTile(
@@ -47,22 +48,46 @@ class SettingsPage extends StatelessWidget {
                       state.setThemeMode(value.first),
                 ),
               ),
-              SwitchListTile(
-                secondary: const Icon(Icons.palette_rounded),
-                title: const Text('动态取色'),
-                subtitle: const Text('Android 12+ 后续接入 Material You'),
-                value: state.settings.dynamicColor,
-                onChanged: state.toggleDynamicColor,
+              const SwitchListTile(
+                secondary: Icon(Icons.palette_rounded),
+                title: Text('动态取色'),
+                subtitle: Text('当前构建尚未接入 Material You，暂不可用'),
+                value: false,
+                onChanged: null,
+              ),
+              ListTile(
+                leading: const Icon(Icons.color_lens_rounded),
+                title: const Text('主题色'),
+                subtitle: Text(_themeAccentLabel(state.settings.themeAccent)),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: SegmentedButton<ThemeAccent>(
+                  segments: ThemeAccent.values
+                      .map(
+                        (accent) => ButtonSegment<ThemeAccent>(
+                          value: accent,
+                          icon: Icon(
+                            Icons.circle,
+                            color: LumioTheme.accentColor(accent),
+                          ),
+                        ),
+                      )
+                      .toList(growable: false),
+                  selected: <ThemeAccent>{state.settings.themeAccent},
+                  onSelectionChanged: (value) =>
+                      state.setThemeAccent(value.first),
+                ),
               ),
             ],
           ),
-          const SectionHeader(title: 'Now playing'),
+          const SectionHeader(title: '播放页'),
           _SettingsCard(
             children: <Widget>[
               ListTile(
                 leading: const Icon(Icons.slideshow_rounded),
                 title: const Text('默认播放页视图'),
-                subtitle: const Text('控制打开 Now Playing 时优先显示的内容'),
+                subtitle: const Text('控制打开播放页时优先显示的内容'),
                 trailing: SegmentedButton<PlaybackView>(
                   segments: const <ButtonSegment<PlaybackView>>[
                     ButtonSegment(
@@ -178,16 +203,18 @@ class SettingsPage extends StatelessWidget {
               ),
             ],
           ),
-          const SectionHeader(title: 'Images'),
+          const SectionHeader(title: '封面与歌词'),
           _SettingsCard(
             children: <Widget>[
               SwitchListTile(
-                secondary: const Icon(Icons.cloud_off_rounded),
-                title: const Text('允许联网获取封面/歌词'),
-                subtitle: Text(
+                secondary: Icon(
                   state.settings.allowOnlineEnhancement
-                      ? '增强模块开启，但仍优先使用本地嵌入信息和缓存。'
-                      : '增强模块关闭，核心功能完全离线运行。',
+                      ? Icons.cloud_sync_rounded
+                      : Icons.cloud_off_rounded,
+                ),
+                title: const Text('允许联网获取封面/歌词'),
+                subtitle: const Text(
+                  '默认关闭；开启后仅在本地内容不足时按需查询并写入文件缓存',
                 ),
                 value: state.settings.allowOnlineEnhancement,
                 onChanged: state.toggleOnlineEnhancement,
@@ -195,13 +222,26 @@ class SettingsPage extends StatelessWidget {
               ListTile(
                 leading: Icon(Icons.offline_pin_rounded, color: scheme.primary),
                 title: const Text('离线优先保护'),
-                subtitle: const Text('关闭后运行时不会调用在线封面/歌词实现。'),
+                subtitle: const Text(
+                  '关闭时零网络请求；已缓存内容仍可离线使用。',
+                ),
               ),
             ],
           ),
-          const SectionHeader(title: 'Audio'),
+          const SectionHeader(title: '音频'),
           _SettingsCard(
             children: <Widget>[
+              SwitchListTile(
+                secondary: const Icon(Icons.compare_arrows_rounded),
+                title: const Text('交叉淡入淡出'),
+                subtitle: Text(
+                  state.settings.crossfadeEnabled
+                      ? '切歌时重叠渐变 3 秒'
+                      : '默认关闭；开启后使用 3 秒',
+                ),
+                value: state.settings.crossfadeEnabled,
+                onChanged: state.toggleCrossfade,
+              ),
               ListTile(
                 leading: const Icon(Icons.speed_rounded),
                 title: const Text('播放速度'),
@@ -371,7 +411,7 @@ class SettingsPage extends StatelessWidget {
                         child: CircularProgressIndicator(strokeWidth: 2.5),
                       )
                     : const Icon(Icons.manage_search_rounded),
-                title: const Text('扫描本机媒体'),
+                title: const Text('扫描/导入本机媒体'),
                 subtitle: Text(state.libraryStatusMessage),
                 trailing: FilledButton.icon(
                   onPressed: state.isScanningLibrary
@@ -380,7 +420,22 @@ class SettingsPage extends StatelessWidget {
                           state.scanMediaLibrary();
                         },
                   icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('扫描'),
+                  label: const Text('开始'),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.restore_from_trash_rounded),
+                title: const Text('恢复已移除媒体'),
+                subtitle: Text(
+                  state.hiddenMediaCount == 0
+                      ? '没有被隐藏的媒体'
+                      : '重新显示 ${state.hiddenMediaCount} 个媒体并扫描',
+                ),
+                trailing: TextButton(
+                  onPressed: state.hiddenMediaCount == 0
+                      ? null
+                      : state.restoreHiddenMedia,
+                  child: const Text('恢复'),
                 ),
               ),
               ListTile(
@@ -464,7 +519,7 @@ class SettingsPage extends StatelessWidget {
               ),
               ListTile(
                 leading: const Icon(Icons.backup_rounded),
-                title: const Text('Backup & Restore'),
+                title: const Text('备份与恢复'),
                 subtitle: Text(state.backupStatusMessage),
               ),
               Padding(
@@ -493,13 +548,13 @@ class SettingsPage extends StatelessWidget {
             children: <Widget>[
               ListTile(
                 leading: Icon(Icons.info_rounded),
-                title: Text('忆光 Lumio'),
-                subtitle: Text('Android 本地媒体核心链路 • Flutter OHOS 兼容构建'),
+                title: Text('忆光'),
+                subtitle: Text('本地媒体核心链路 • 兼容鸿蒙构建'),
               ),
               ListTile(
                 leading: Icon(Icons.favorite_rounded),
                 title: Text('致谢'),
-                subtitle: Text('设计参考 Retro Music 与主流本地播放器体验'),
+                subtitle: Text('设计参考经典音乐播放器与主流本地播放器体验'),
               ),
             ],
           ),
@@ -513,6 +568,15 @@ class SettingsPage extends StatelessWidget {
       ThemeMode.system => '跟随系统',
       ThemeMode.light => '浅色',
       ThemeMode.dark => '深色',
+    };
+  }
+
+  String _themeAccentLabel(ThemeAccent accent) {
+    return switch (accent) {
+      ThemeAccent.blue => '品牌蓝',
+      ThemeAccent.coral => '珊瑚红',
+      ThemeAccent.teal => '青绿色',
+      ThemeAccent.violet => '柔紫色',
     };
   }
 
@@ -569,7 +633,7 @@ class SettingsPage extends StatelessWidget {
           controller: controller,
           autofocus: true,
           decoration: const InputDecoration(
-            hintText: '/storage/emulated/0/Recordings',
+            hintText: '/storage/emulated/0/录音',
           ),
         ),
         actions: <Widget>[
@@ -600,7 +664,7 @@ class SettingsPage extends StatelessWidget {
           controller: controller,
           autofocus: true,
           decoration: const InputDecoration(
-            hintText: '/storage/emulated/0/Music',
+            hintText: '/storage/emulated/0/音乐',
           ),
         ),
         actions: <Widget>[

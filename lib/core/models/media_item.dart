@@ -76,6 +76,7 @@ class MediaItem {
     this.fileSizeBytes = 0,
     this.fileSizeLabel,
     this.formatLabel,
+    this.artworkPath,
   });
 
   factory MediaItem.fromJson(Map<String, Object?> json) {
@@ -88,8 +89,8 @@ class MediaItem {
       id: json['id']?.toString() ?? '',
       kind: kind,
       title: json['title']?.toString() ?? '',
-      artist: json['artist']?.toString() ?? 'Unknown artist',
-      album: json['album']?.toString() ?? 'Unknown album',
+      artist: json['artist']?.toString() ?? '未知艺术家',
+      album: json['album']?.toString() ?? '未知专辑',
       duration: Duration(milliseconds: _asInt(json['durationMs'])),
       path: json['path']?.toString() ?? '',
       folder: json['folder']?.toString() ?? '',
@@ -118,6 +119,7 @@ class MediaItem {
       fileSizeBytes: _asInt(json['fileSizeBytes']),
       fileSizeLabel: _nullableString(json['fileSizeLabel']),
       formatLabel: _nullableString(json['formatLabel']),
+      artworkPath: _nullableString(json['artworkPath']),
     );
   }
 
@@ -140,6 +142,7 @@ class MediaItem {
   final int fileSizeBytes;
   final String? fileSizeLabel;
   final String? formatLabel;
+  final String? artworkPath;
 
   String get subtitle {
     if (kind == MediaKind.video) {
@@ -177,6 +180,7 @@ class MediaItem {
     int? fileSizeBytes,
     String? fileSizeLabel,
     String? formatLabel,
+    String? artworkPath,
   }) {
     return MediaItem(
       id: id ?? this.id,
@@ -198,6 +202,7 @@ class MediaItem {
       fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
       fileSizeLabel: fileSizeLabel ?? this.fileSizeLabel,
       formatLabel: formatLabel ?? this.formatLabel,
+      artworkPath: artworkPath ?? this.artworkPath,
     );
   }
 
@@ -222,6 +227,7 @@ class MediaItem {
       'fileSizeBytes': fileSizeBytes,
       'fileSizeLabel': fileSizeLabel,
       'formatLabel': formatLabel,
+      'artworkPath': artworkPath,
     };
   }
 }

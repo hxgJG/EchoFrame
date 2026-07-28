@@ -2,9 +2,9 @@
 
 {
   "modelVersion": "5.0.0",
-  "name": "lumio",
+  "name": "com.hxg.lumio",
   "version": "1.0.0",
-  "description": "Please describe the basic information.",
+  "description": "忆光本地音视频播放器。",
   "main": "",
   "author": "",
   "license": "",

@@ -4,13 +4,15 @@ import 'dart:io' show Platform;
 import 'package:flutter/services.dart';
 
 import '../../core/models/media_item.dart';
+import 'media3_queue_payload.dart';
 import 'playback_repository.dart';
+import 'share_payload.dart';
 
 class PlatformPlaybackRepository implements PlaybackRepository {
   PlatformPlaybackRepository({
     MethodChannel channel = const MethodChannel('lumio/playback'),
   }) : _channel = channel {
-    if (Platform.isAndroid) {
+    if (_isSupportedPlatform) {
       _channel.setMethodCallHandler(_handleMethodCall);
     }
   }
@@ -20,6 +22,8 @@ class PlatformPlaybackRepository implements PlaybackRepository {
       StreamController<PlaybackEvent>.broadcast();
   int? _videoTextureId;
 
+  static bool get _isSupportedPlatform => Platform.isAndroid || Platform.isOhos;
+
   @override
   Stream<PlaybackEvent> get events => _events.stream;
 
@@ -27,22 +31,32 @@ class PlatformPlaybackRepository implements PlaybackRepository {
   int? get videoTextureId => _videoTextureId;
 
   @override
-  Future<void> play(MediaItem item, Duration position) async {
-    if (!Platform.isAndroid) {
+  Future<void> play(
+    MediaItem item,
+    Duration position, {
+    List<MediaItem> queue = const <MediaItem>[],
+  }) async {
+    if (!_isSupportedPlatform) {
       return;
     }
     final result = await _channel.invokeMapMethod<String, Object?>(
       'play',
-      <String, Object?>{
-        'mediaId': item.id,
-        'kind': item.kind.name,
-        'title': item.title,
-        'artist': item.artist,
-        'album': item.album,
-        'path': item.path,
-        'durationMs': item.duration.inMilliseconds,
-        'positionMs': position.inMilliseconds,
-      },
+      Platform.isAndroid
+          ? media3QueuePayload(
+              current: item,
+              queue: queue.isEmpty ? <MediaItem>[item] : queue,
+              position: position,
+            )
+          : <String, Object?>{
+              'mediaId': item.id,
+              'kind': item.kind.name,
+              'title': item.title,
+              'artist': item.artist,
+              'album': item.album,
+              'path': item.path,
+              'durationMs': item.duration.inMilliseconds,
+              'positionMs': position.inMilliseconds,
+            },
     );
     _setVideoTextureId(_asInt(result?['textureId']));
   }
@@ -55,7 +69,7 @@ class PlatformPlaybackRepository implements PlaybackRepository {
 
   @override
   Future<void> seek(Duration position) {
-    if (!Platform.isAndroid) {
+    if (!_isSupportedPlatform) {
       return Future<void>.value();
     }
     return _channel.invokeMethod<void>('seek', <String, Object?>{
@@ -65,7 +79,7 @@ class PlatformPlaybackRepository implements PlaybackRepository {
 
   @override
   Future<void> setSpeed(double speed) {
-    if (!Platform.isAndroid) {
+    if (!_isSupportedPlatform) {
       return Future<void>.value();
     }
     return _channel.invokeMethod<void>('setSpeed', <String, Object?>{
@@ -78,7 +92,7 @@ class PlatformPlaybackRepository implements PlaybackRepository {
     String presetName, {
     List<double> customGains = const <double>[],
   }) {
-    if (!Platform.isAndroid) {
+    if (!_isSupportedPlatform) {
       return Future<void>.value();
     }
     return _channel.invokeMethod<void>('setEqualizerPreset', <String, Object?>{
@@ -89,7 +103,7 @@ class PlatformPlaybackRepository implements PlaybackRepository {
 
   @override
   Future<void> setVolumeScale(double scale) {
-    if (!Platform.isAndroid) {
+    if (!_isSupportedPlatform) {
       return Future<void>.value();
     }
     return _channel.invokeMethod<void>('setVolumeScale', <String, Object?>{
@@ -98,11 +112,42 @@ class PlatformPlaybackRepository implements PlaybackRepository {
   }
 
   @override
+  Future<void> setCrossfadeDuration(Duration duration) {
+    if (!_isSupportedPlatform) {
+      return Future<void>.value();
+    }
+    return _channel
+        .invokeMethod<void>('setCrossfadeDuration', <String, Object?>{
+      'durationMs': duration.inMilliseconds,
+    });
+  }
+
+  @override
+  Future<void> setShuffleEnabled(bool enabled) {
+    if (!_isSupportedPlatform) {
+      return Future<void>.value();
+    }
+    return _channel.invokeMethod<void>('setShuffleEnabled', <String, Object?>{
+      'enabled': enabled,
+    });
+  }
+
+  @override
+  Future<void> setRepeatMode(RepeatMode mode) {
+    if (!_isSupportedPlatform) {
+      return Future<void>.value();
+    }
+    return _channel.invokeMethod<void>('setRepeatMode', <String, Object?>{
+      'mode': mode.name,
+    });
+  }
+
+  @override
   Future<void> stop() => _invokeWithoutResult('stop');
 
   @override
   Future<Duration> position() async {
-    if (!Platform.isAndroid) {
+    if (!_isSupportedPlatform) {
       return Duration.zero;
     }
     final value = await _channel.invokeMethod<int>('position');
@@ -116,7 +161,7 @@ class PlatformPlaybackRepository implements PlaybackRepository {
 
   @override
   Future<void> adjustBrightness(double delta) {
-    if (!Platform.isAndroid) {
+    if (!_isSupportedPlatform) {
       return Future<void>.value();
     }
     return _channel.invokeMethod<void>('adjustBrightness', <String, Object?>{
@@ -126,7 +171,7 @@ class PlatformPlaybackRepository implements PlaybackRepository {
 
   @override
   Future<void> adjustVolume(double delta) {
-    if (!Platform.isAndroid) {
+    if (!_isSupportedPlatform) {
       return Future<void>.value();
     }
     return _channel.invokeMethod<void>('adjustVolume', <String, Object?>{
@@ -136,19 +181,27 @@ class PlatformPlaybackRepository implements PlaybackRepository {
 
   @override
   Future<void> share(MediaItem item) {
-    if (!Platform.isAndroid) {
+    if (!_isSupportedPlatform) {
       return Future<void>.value();
     }
-    return _channel.invokeMethod<void>('share', <String, Object?>{
-      'mediaId': item.id,
-      'kind': item.kind.name,
-      'title': item.title,
-      'path': item.path,
-    });
+    return _channel.invokeMethod<void>('share', mediaSharePayload(item));
+  }
+
+  @override
+  Future<void> shareMany(List<MediaItem> items) {
+    if (!_isSupportedPlatform || items.isEmpty) {
+      return Future<void>.value();
+    }
+    return _channel.invokeMethod<void>(
+      'shareMany',
+      <String, Object?>{
+        'items': items.map(mediaSharePayload).toList(growable: false),
+      },
+    );
   }
 
   Future<void> _invokeWithoutResult(String method) async {
-    if (!Platform.isAndroid) {
+    if (!_isSupportedPlatform) {
       return;
     }
     await _channel.invokeMethod<void>(method);
@@ -187,6 +240,38 @@ class PlatformPlaybackRepository implements PlaybackRepository {
         _events.add(const PlaybackEvent(type: PlaybackEventType.next));
       case 'previous':
         _events.add(const PlaybackEvent(type: PlaybackEventType.previous));
+      case 'interruptionBegan':
+        _events.add(
+          PlaybackEvent(
+            type: PlaybackEventType.interruptionBegan,
+            mayResume: values['mayResume'] == true,
+          ),
+        );
+      case 'interruptionEnded':
+        _events.add(
+          const PlaybackEvent(type: PlaybackEventType.interruptionEnded),
+        );
+      case 'pipModeChanged':
+        _events.add(
+          PlaybackEvent(
+            type: PlaybackEventType.pictureInPictureChanged,
+            isInPictureInPicture: values['isInPictureInPicture'] == true,
+          ),
+        );
+      case 'mediaItemChanged':
+        _events.add(
+          PlaybackEvent(
+            type: PlaybackEventType.mediaItemChanged,
+            mediaId: values['mediaId']?.toString(),
+          ),
+        );
+      case 'nativePlaybackStateChanged':
+        _events.add(
+          PlaybackEvent(
+            type: PlaybackEventType.nativePlaybackStateChanged,
+            isPlaying: values['isPlaying'] == true,
+          ),
+        );
     }
   }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
+import '../../app/theme.dart';
 import '../../core/models/media_item.dart';
 import '../../core/models/playlist.dart';
 import '../search/search_page.dart';
@@ -10,7 +11,7 @@ import '../../shared/widgets/section_header.dart';
 class PlaylistsPage extends StatelessWidget {
   const PlaylistsPage({super.key, required this.state});
 
-  final EchoAppState state;
+  final LumioAppState state;
 
   @override
   Widget build(BuildContext context) {
@@ -41,6 +42,13 @@ class PlaylistsPage extends StatelessWidget {
           const SectionHeader(title: '持久播放列表'),
           ...state.playlists.map((playlist) {
             final items = state.itemsForPlaylist(playlist);
+            final playlistColor = items.isEmpty
+                ? LumioTheme.audioColor(scheme.brightness)
+                : items.every((item) => item.kind == MediaKind.video)
+                    ? LumioTheme.videoColor(scheme.brightness)
+                    : items.every((item) => item.kind == MediaKind.audio)
+                        ? LumioTheme.audioColor(scheme.brightness)
+                        : scheme.primary;
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: ExpansionTile(
@@ -54,7 +62,7 @@ class PlaylistsPage extends StatelessWidget {
                 collapsedBackgroundColor: scheme.surface,
                 leading: Icon(
                   Icons.playlist_play_rounded,
-                  color: scheme.primary,
+                  color: playlistColor,
                 ),
                 title: Text(playlist.name, style: textTheme.titleMedium),
                 subtitle: Text(
@@ -240,12 +248,15 @@ class PlaylistsPage extends StatelessWidget {
 class _QueueCard extends StatelessWidget {
   const _QueueCard({required this.state, required this.current});
 
-  final EchoAppState state;
+  final LumioAppState state;
   final MediaItem? current;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final mediaColor = current == null
+        ? scheme.primary
+        : LumioTheme.mediaColor(current!.kind, scheme.brightness);
     final textTheme = Theme.of(context).textTheme;
     final queueItems = state.queueItems;
     final currentTitle = current?.title;
@@ -260,7 +271,7 @@ class _QueueCard extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(Icons.queue_music_rounded, color: scheme.primary),
+              Icon(Icons.queue_music_rounded, color: mediaColor),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
@@ -285,7 +296,7 @@ class _QueueCard extends StatelessWidget {
                   state.isPlaying
                       ? Icons.pause_circle_rounded
                       : Icons.play_circle_rounded,
-                  color: scheme.primary,
+                  color: mediaColor,
                 ),
               ),
             ],
@@ -304,7 +315,7 @@ class _QueueReorderList extends StatelessWidget {
   const _QueueReorderList({required this.items, required this.state});
 
   final List<MediaItem> items;
-  final EchoAppState state;
+  final LumioAppState state;
 
   @override
   Widget build(BuildContext context) {
@@ -341,7 +352,7 @@ class _PlaylistReorderList extends StatelessWidget {
 
   final Playlist playlist;
   final List<MediaItem> items;
-  final EchoAppState state;
+  final LumioAppState state;
 
   @override
   Widget build(BuildContext context) {

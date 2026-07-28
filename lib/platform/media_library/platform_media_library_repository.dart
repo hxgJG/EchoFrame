@@ -6,6 +6,7 @@ import '../../core/lyrics/lrc_parser.dart';
 import '../../core/models/media_item.dart';
 import '../../core/subtitles/ass_parser.dart';
 import '../../core/subtitles/srt_parser.dart';
+import 'media_file_operation.dart';
 import 'media_library_repository.dart';
 
 class PlatformMediaLibraryRepository implements MediaLibraryRepository {
@@ -15,9 +16,11 @@ class PlatformMediaLibraryRepository implements MediaLibraryRepository {
 
   final MethodChannel _channel;
 
+  bool get _isSupportedPlatform => Platform.isAndroid || Platform.isOhos;
+
   @override
   Future<MediaLibraryScanResult> scan(MediaLibraryScanFilter filter) async {
-    if (!Platform.isAndroid) {
+    if (!_isSupportedPlatform) {
       return MediaLibraryScanResult(
         status: MediaLibraryScanStatus.unsupported,
         message: Platform.isIOS ? 'iOS 将在导入流程阶段接入文件选择器。' : '当前平台暂未接入媒体库扫描。',
@@ -41,6 +44,12 @@ class PlatformMediaLibraryRepository implements MediaLibraryRepository {
         return MediaLibraryScanResult(
           status: MediaLibraryScanStatus.permissionDenied,
           message: message.isEmpty ? '需要授权读取本机音频/视频。' : message,
+        );
+      }
+      if (status == 'cancelled') {
+        return MediaLibraryScanResult(
+          status: MediaLibraryScanStatus.cancelled,
+          message: message.isEmpty ? '已取消，媒体库保持不变。' : message,
         );
       }
       if (status != 'completed') {
@@ -71,7 +80,7 @@ class PlatformMediaLibraryRepository implements MediaLibraryRepository {
   }
 
   Future<MediaLibraryScanResult> restoreLastScan() async {
-    if (!Platform.isAndroid) {
+    if (!_isSupportedPlatform) {
       return const MediaLibraryScanResult(
         status: MediaLibraryScanStatus.unsupported,
         message: '当前平台暂未接入媒体库扫描快照。',
@@ -103,6 +112,43 @@ class PlatformMediaLibraryRepository implements MediaLibraryRepository {
       return const MediaLibraryScanResult(
         status: MediaLibraryScanStatus.unsupported,
         message: '当前平台尚未注册媒体库扫描插件。',
+      );
+    }
+  }
+
+  @override
+  Future<MediaFileOperationResult> performFileOperation(
+    MediaFileOperationRequest request,
+  ) async {
+    if (!Platform.isAndroid) {
+      return const MediaFileOperationResult(
+        status: MediaFileOperationStatus.unsupported,
+        message: '当前平台暂未接入真实媒体文件操作。',
+      );
+    }
+    if (!request.isValid) {
+      return const MediaFileOperationResult(
+        status: MediaFileOperationStatus.failed,
+        message: '文件操作参数无效。',
+      );
+    }
+    try {
+      final raw = await _channel.invokeMapMethod<String, Object?>(
+        'performFileOperation',
+        request.toJson(),
+      );
+      return MediaFileOperationResult.fromJson(
+        raw ?? const <String, Object?>{'status': 'failed'},
+      );
+    } on PlatformException catch (error) {
+      return MediaFileOperationResult(
+        status: MediaFileOperationStatus.failed,
+        message: error.message ?? '文件操作失败。',
+      );
+    } on MissingPluginException {
+      return const MediaFileOperationResult(
+        status: MediaFileOperationStatus.unsupported,
+        message: '当前平台尚未注册真实媒体文件操作。',
       );
     }
   }
@@ -139,8 +185,8 @@ class PlatformMediaLibraryRepository implements MediaLibraryRepository {
       id: id,
       kind: kind,
       title: title,
-      artist: item['artist']?.toString() ?? 'Unknown artist',
-      album: item['album']?.toString() ?? 'Unknown album',
+      artist: item['artist']?.toString() ?? '未知艺术家',
+      album: item['album']?.toString() ?? '未知专辑',
       duration: Duration(milliseconds: durationMs),
       path: path,
       folder: folder,
@@ -203,17 +249,18 @@ class PlatformMediaLibraryRepository implements MediaLibraryRepository {
 
   Color _accentFor(String id, MediaKind kind) {
     const audioPalette = <Color>[
-      Color(0xFF2F6BFF),
-      Color(0xFFFF6E68),
-      Color(0xFF1FC7A6),
-      Color(0xFFFFB020),
-      Color(0xFF7C6FF6),
+      Color(0xFFFFB000),
+      Color(0xFFFF9A1A),
+      Color(0xFFF27600),
+      Color(0xFFFFC044),
+      Color(0xFFE87500),
     ];
     const videoPalette = <Color>[
-      Color(0xFF2563EB),
-      Color(0xFF00A88F),
-      Color(0xFFE85D75),
-      Color(0xFF7C6FF6),
+      Color(0xFF18DDBE),
+      Color(0xFF00A98F),
+      Color(0xFF00B8D4),
+      Color(0xFF28D7C4),
+      Color(0xFF008EA4),
     ];
     final palette = kind == MediaKind.audio ? audioPalette : videoPalette;
     return palette[id.hashCode.abs() % palette.length];

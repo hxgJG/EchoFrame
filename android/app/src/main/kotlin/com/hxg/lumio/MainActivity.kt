@@ -1,22 +1,33 @@
 package com.hxg.lumio
 
 import android.Manifest
+import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.PictureInPictureParams
+import android.app.RemoteAction
+import android.app.RecoverableSecurityException
 import android.content.ContentResolver
+import android.content.ContentValues
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.database.Cursor
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.drawable.Icon
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.media.MediaMetadata
+import android.media.MediaMetadataRetriever
 import android.media.audiofx.Equalizer
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -25,14 +36,39 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Rational
 import android.view.Surface
+import androidx.core.content.ContextCompat
+import androidx.media3.common.MediaItem as Media3MediaItem
+import androidx.media3.common.MediaMetadata as Media3MediaMetadata
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.mpatric.mp3agic.ID3v24Tag
+import com.mpatric.mp3agic.Mp3File
+import com.google.common.util.concurrent.ListenableFuture
+import com.tencent.mmkv.MMKV
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.view.TextureRegistry
 import java.io.File
+import java.io.ByteArrayOutputStream
+import java.util.concurrent.Executors
 import org.json.JSONArray
 import org.json.JSONObject
+
+private data class PendingMediaFileOperation(
+    val type: String,
+    val mediaIds: List<String>,
+    val displayName: String,
+    val relativePath: String,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val result: MethodChannel.Result,
+)
 
 class MainActivity : FlutterActivity() {
     private val notificationChannelId = "lumio_playback"
@@ -43,18 +79,26 @@ class MainActivity : FlutterActivity() {
     private val mediaLibraryChannelName = "lumio/media_library"
     private val appStorageChannelName = "lumio/app_storage"
     private val playbackChannelName = "lumio/playback"
+    private val appStatePartitions = listOf("session", "library", "playlists")
     private val permissionRequestCode = 2407
+    private val fileOperationRequestCode = 2410
     private var pendingScanResult: MethodChannel.Result? = null
     private var pendingScanArguments: Any? = null
+    private var pendingFileOperation: PendingMediaFileOperation? = null
     private var playbackChannel: MethodChannel? = null
+    private var mediaControllerFuture: ListenableFuture<MediaController>? = null
+    private var mediaController: MediaController? = null
+    private var completionEventSent = false
     private var flutterTextureRegistry: TextureRegistry? = null
     private var mediaPlayer: MediaPlayer? = null
     private var videoTextureEntry: TextureRegistry.SurfaceTextureEntry? = null
     private var videoSurface: Surface? = null
     private var currentPlaybackMediaId: String? = null
-    private var currentPlaybackTitle: String = "Lumio"
-    private var currentPlaybackArtist: String = "Local media"
+    private var currentPlaybackTitle: String = "忆光"
+    private var currentPlaybackArtist: String = "本地媒体"
     private var currentPlaybackAlbum: String = ""
+    private var currentPlaybackKind: String = ""
+    private var isInPipMode = false
     private var playbackSpeed: Float = 1.0f
     private var volumeScale: Float = 1.0f
     private var equalizerPreset: String = "off"
@@ -64,6 +108,7 @@ class MainActivity : FlutterActivity() {
     private var audioFocusRequest: AudioFocusRequest? = null
     private var mediaSession: MediaSession? = null
     private var noisyReceiverRegistered = false
+    private val mediaScanExecutor = Executors.newSingleThreadExecutor()
     private val noisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
@@ -73,33 +118,90 @@ class MainActivity : FlutterActivity() {
     }
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         when (focusChange) {
-            AudioManager.AUDIOFOCUS_LOSS,
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                playbackChannel?.invokeMethod("interruptionEnded", null)
+            }
+
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                pauseForSystem("interruptionBegan", mayResume = false)
+            }
+
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK,
-            -> pauseForSystem("pause")
+            -> pauseForSystem("interruptionBegan", mayResume = true)
+        }
+    }
+    private val mediaControllerListener = object : Player.Listener {
+        override fun onMediaItemTransition(mediaItem: Media3MediaItem?, reason: Int) {
+            val mediaId = mediaItem?.mediaId.orEmpty()
+            if (mediaId.isBlank()) {
+                return
+            }
+            completionEventSent = false
+            currentPlaybackMediaId = mediaId
+            currentPlaybackKind = mediaItem?.mediaMetadata?.extras
+                ?.getString("kind")
+                .orEmpty()
+            playbackChannel?.invokeMethod(
+                "mediaItemChanged",
+                mapOf("mediaId" to mediaId),
+            )
+        }
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            updatePictureInPictureParams(isPlaying)
+            playbackChannel?.invokeMethod(
+                "nativePlaybackStateChanged",
+                mapOf("isPlaying" to isPlaying),
+            )
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState != Player.STATE_ENDED || completionEventSent) {
+                return
+            }
+            completionEventSent = true
+            playbackChannel?.invokeMethod(
+                "completed",
+                mapOf("mediaId" to currentPlaybackMediaId),
+            )
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            playbackChannel?.invokeMethod(
+                "error",
+                mapOf(
+                    "mediaId" to currentPlaybackMediaId,
+                    "message" to (error.message ?: "Media3 playback failed."),
+                ),
+            )
+        }
+
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            applyEqualizer(audioSessionId)
         }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MMKV.initialize(this)
         flutterTextureRegistry = flutterEngine.renderer
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        createNotificationChannel()
-        setupMediaSession()
-        registerNoisyReceiver()
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, mediaLibraryChannelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "scan" -> scanMediaLibrary(call.arguments, result)
                     "restoreLastScan" -> restoreLastScan(result)
+                    "loadArtwork" -> loadArtwork(call.arguments, result)
+                    "performFileOperation" -> performMediaFileOperation(call.arguments, result)
                     else -> result.notImplemented()
                 }
             }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, appStorageChannelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "load" -> loadAppState(result)
-                    "save" -> saveAppState(call.arguments, result)
+                    "loadPartition" -> loadAppStatePartition(call.arguments, result)
+                    "savePartition" -> saveAppStatePartition(call.arguments, result)
                     "createBackup" -> createAppBackup(call.arguments, result)
                     "restoreLatestBackup" -> restoreLatestBackup(result)
                     "latestBackup" -> latestBackup(result)
@@ -116,15 +218,106 @@ class MainActivity : FlutterActivity() {
                 "setSpeed" -> setPlaybackSpeed(call.arguments, result)
                 "setEqualizerPreset" -> setEqualizerPreset(call.arguments, result)
                 "setVolumeScale" -> setVolumeScale(call.arguments, result)
+                "setCrossfadeDuration" -> setCrossfadeDuration(call.arguments, result)
+                "setShuffleEnabled" -> setShuffleEnabled(call.arguments, result)
+                "setRepeatMode" -> setRepeatMode(call.arguments, result)
                 "stop" -> stopMedia(result)
                 "position" -> playbackPosition(result)
                 "enterPictureInPicture" -> enterPip(result)
                 "adjustBrightness" -> adjustBrightness(call.arguments, result)
                 "adjustVolume" -> adjustVolume(call.arguments, result)
                 "share" -> shareMedia(call.arguments, result)
+                "shareMany" -> shareManyMedia(call.arguments, result)
                 else -> result.notImplemented()
             }
         }
+        initializeMediaController()
+    }
+
+    private fun initializeMediaController() {
+        val token = SessionToken(
+            this,
+            ComponentName(this, LumioPlaybackService::class.java),
+        )
+        val future = MediaController.Builder(this, token).buildAsync()
+        mediaControllerFuture = future
+        future.addListener(
+            {
+                try {
+                    attachMediaController(future.get())
+                } catch (_: Exception) {
+                    // Method channel calls surface initialization failures to Flutter.
+                }
+            },
+            ContextCompat.getMainExecutor(this),
+        )
+    }
+
+    private fun attachMediaController(controller: MediaController) {
+        if (mediaController === controller) {
+            return
+        }
+        mediaController?.removeListener(mediaControllerListener)
+        mediaController = controller
+        controller.addListener(mediaControllerListener)
+        controller.currentMediaItem?.let {
+            mediaControllerListener.onMediaItemTransition(
+                it,
+                Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED,
+            )
+        }
+        mediaControllerListener.onIsPlayingChanged(controller.isPlaying)
+    }
+
+    private fun withMediaController(
+        result: MethodChannel.Result,
+        errorCode: String,
+        action: (MediaController) -> Any?,
+    ) {
+        val current = mediaController
+        if (current != null) {
+            completeControllerAction(result, errorCode, current, action)
+            return
+        }
+        val future = mediaControllerFuture
+        if (future == null) {
+            result.error(errorCode, "Media3 controller is unavailable.", null)
+            return
+        }
+        future.addListener(
+            {
+                try {
+                    val controller = future.get()
+                    attachMediaController(controller)
+                    completeControllerAction(result, errorCode, controller, action)
+                } catch (error: Exception) {
+                    result.error(
+                        errorCode,
+                        error.cause?.message ?: error.message ?: "Media3 controller failed.",
+                        null,
+                    )
+                }
+            },
+            ContextCompat.getMainExecutor(this),
+        )
+    }
+
+    private fun completeControllerAction(
+        result: MethodChannel.Result,
+        errorCode: String,
+        controller: MediaController,
+        action: (MediaController) -> Any?,
+    ) {
+        try {
+            result.success(action(controller))
+        } catch (error: Exception) {
+            result.error(errorCode, error.message ?: "Media3 operation failed.", null)
+        }
+    }
+
+    private fun mediaUri(path: String): Uri {
+        val parsed = Uri.parse(path)
+        return if (parsed.scheme.isNullOrBlank()) Uri.fromFile(File(path)) else parsed
     }
 
     private fun shareMedia(arguments: Any?, result: MethodChannel.Result) {
@@ -132,7 +325,7 @@ class MainActivity : FlutterActivity() {
             val values = arguments as? Map<*, *> ?: emptyMap<String, Any?>()
             val mediaId = values["mediaId"]?.toString().orEmpty()
             val kind = values["kind"]?.toString().orEmpty()
-            val title = values["title"]?.toString().orEmpty().ifBlank { "Lumio media" }
+            val title = values["title"]?.toString().orEmpty().ifBlank { "忆光媒体" }
             val uri = mediaStoreUri(mediaId, kind)
             if (uri == null) {
                 result.error("shareUnsupported", "只能分享 Android 媒体库扫描到的本地媒体。", null)
@@ -143,6 +336,33 @@ class MainActivity : FlutterActivity() {
                 type = mimeType
                 putExtra(Intent.EXTRA_STREAM, uri)
                 putExtra(Intent.EXTRA_TITLE, title)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(intent, "分享媒体"))
+            result.success(null)
+        } catch (error: Exception) {
+            result.error("shareFailed", error.message ?: "Share media failed.", null)
+        }
+    }
+
+    private fun shareManyMedia(arguments: Any?, result: MethodChannel.Result) {
+        try {
+            val values = arguments as? Map<*, *> ?: emptyMap<String, Any?>()
+            val items = values["items"] as? List<*> ?: emptyList<Any?>()
+            val uris = ArrayList<Uri>()
+            items.forEach { rawItem ->
+                val item = rawItem as? Map<*, *> ?: return@forEach
+                val mediaId = item["mediaId"]?.toString().orEmpty()
+                val kind = item["kind"]?.toString().orEmpty()
+                mediaStoreUri(mediaId, kind)?.let { uris.add(it) }
+            }
+            if (uris.isEmpty()) {
+                result.error("shareUnsupported", "没有可分享的 Android 媒体库文件。", null)
+                return
+            }
+            val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                type = "*/*"
+                putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             startActivity(Intent.createChooser(intent, "分享媒体"))
@@ -163,11 +383,282 @@ class MainActivity : FlutterActivity() {
         return Uri.withAppendedPath(baseUri, numericId.toString())
     }
 
+    private fun mediaStoreUri(mediaId: String): Uri? {
+        val kind = when {
+            mediaId.contains("-audio-") -> "audio"
+            mediaId.contains("-video-") -> "video"
+            else -> return null
+        }
+        return mediaStoreUri(mediaId, kind)
+    }
+
+    private fun performMediaFileOperation(arguments: Any?, result: MethodChannel.Result) {
+        if (pendingFileOperation != null) {
+            result.error("operationInProgress", "已有文件操作正在等待系统授权。", null)
+            return
+        }
+        val values = arguments as? Map<*, *> ?: emptyMap<String, Any?>()
+        val type = values["type"]?.toString().orEmpty()
+        val mediaIds = (values["mediaIds"] as? List<*>)
+            ?.mapNotNull { it?.toString()?.takeIf(String::isNotBlank) }
+            ?.distinct()
+            .orEmpty()
+        val displayName = values["displayName"]?.toString()?.trim().orEmpty()
+        val relativePath = values["relativePath"]?.toString()?.trim().orEmpty()
+        val title = values["title"]?.toString()?.trim().orEmpty()
+        val artist = values["artist"]?.toString()?.trim().orEmpty()
+        val album = values["album"]?.toString()?.trim().orEmpty()
+        if (
+            mediaIds.isEmpty() ||
+            type !in setOf("rename", "move", "writeTags") ||
+            (type == "rename" && (mediaIds.size != 1 || !isSafeDisplayName(displayName))) ||
+            (type == "move" && !isSafeRelativePath(relativePath)) ||
+            (type == "writeTags" && (
+                mediaIds.size != 1 ||
+                    listOf(title, artist, album).all(String::isBlank)
+                ))
+        ) {
+            result.success(fileOperationResult("failed", "文件操作参数无效。"))
+            return
+        }
+        val uris = mediaIds.mapNotNull(::mediaStoreUri)
+        if (uris.size != mediaIds.size) {
+            result.success(fileOperationResult("failed", "只能操作 Android MediaStore 中的媒体。"))
+            return
+        }
+        val pending = PendingMediaFileOperation(
+            type = type,
+            mediaIds = mediaIds,
+            displayName = displayName,
+            relativePath = relativePath,
+            title = title,
+            artist = artist,
+            album = album,
+            result = result,
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            requestMediaStoreApproval(pending, uris)
+            return
+        }
+        try {
+            completeMediaFileOperation(pending, uris)
+        } catch (error: RecoverableSecurityException) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                pendingFileOperation = pending
+                startIntentSenderForResult(
+                    error.userAction.actionIntent.intentSender,
+                    fileOperationRequestCode,
+                    null,
+                    0,
+                    0,
+                    0,
+                )
+            } else {
+                result.success(
+                    fileOperationResult(
+                        "failed",
+                        error.message ?: "系统拒绝了文件操作。",
+                    ),
+                )
+            }
+        } catch (error: Exception) {
+            result.success(
+                fileOperationResult(
+                    "failed",
+                    error.message ?: "文件操作失败。",
+                ),
+            )
+        }
+    }
+
+    private fun requestMediaStoreApproval(
+        operation: PendingMediaFileOperation,
+        uris: List<Uri>,
+    ) {
+        try {
+            val pendingIntent = MediaStore.createWriteRequest(contentResolver, uris)
+            pendingFileOperation = operation
+            startIntentSenderForResult(
+                pendingIntent.intentSender,
+                fileOperationRequestCode,
+                null,
+                0,
+                0,
+                0,
+            )
+        } catch (error: Exception) {
+            pendingFileOperation = null
+            operation.result.success(
+                fileOperationResult(
+                    "failed",
+                    error.message ?: "无法启动系统文件授权。",
+                ),
+            )
+        }
+    }
+
+    private fun completeMediaFileOperation(
+        operation: PendingMediaFileOperation,
+        uris: List<Uri> = operation.mediaIds.mapNotNull(::mediaStoreUri),
+    ) {
+        val affectedIds = mutableListOf<String>()
+        operation.mediaIds.zip(uris).forEach { (mediaId, uri) ->
+            val changed = when (operation.type) {
+                "rename" -> contentResolver.update(
+                    uri,
+                    ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, operation.displayName)
+                    },
+                    null,
+                    null,
+                )
+                "move" -> {
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                        0
+                    } else {
+                        contentResolver.update(
+                            uri,
+                            ContentValues().apply {
+                                put(MediaStore.MediaColumns.RELATIVE_PATH, operation.relativePath)
+                            },
+                            null,
+                            null,
+                        )
+                    }
+                }
+                "writeTags" -> writeMp3Tags(
+                    uri,
+                    title = operation.title,
+                    artist = operation.artist,
+                    album = operation.album,
+                )
+                else -> 0
+            }
+            if (changed > 0) {
+                affectedIds.add(mediaId)
+            }
+        }
+        val status = if (affectedIds.isNotEmpty()) "completed" else "failed"
+        val message = when {
+            affectedIds.isEmpty() -> "没有媒体文件被修改。"
+            operation.type == "rename" -> "文件已重命名。"
+            operation.type == "writeTags" -> "MP3 标签已写入源文件。"
+            else -> "已移动 ${affectedIds.size} 个媒体文件。"
+        }
+        operation.result.success(fileOperationResult(status, message, affectedIds))
+    }
+
+    private fun fileOperationResult(
+        status: String,
+        message: String,
+        affectedMediaIds: List<String> = emptyList(),
+    ): Map<String, Any?> {
+        return mapOf(
+            "status" to status,
+            "message" to message,
+            "affectedMediaIds" to affectedMediaIds,
+        )
+    }
+
+    private fun isSafeDisplayName(value: String): Boolean {
+        return value.isNotBlank() &&
+            value !in setOf(".", "..") &&
+            !value.contains('/') &&
+            !value.contains('\\')
+    }
+
+    private fun isSafeRelativePath(value: String): Boolean {
+        if (value.isBlank() || value.startsWith('/') || value.contains('\\')) {
+            return false
+        }
+        return value.split('/')
+            .filter(String::isNotBlank)
+            .all { it !in setOf(".", "..") }
+    }
+
+    private fun writeMp3Tags(
+        uri: Uri,
+        title: String,
+        artist: String,
+        album: String,
+    ): Int {
+        val displayName = mediaDisplayName(uri)
+        if (!displayName.endsWith(".mp3", ignoreCase = true)) {
+            throw IllegalArgumentException("当前仅支持写入 MP3 标签。")
+        }
+        val token = System.nanoTime().toString()
+        val inputFile = File(cacheDir, "lumio-tag-$token-input.mp3")
+        val outputFile = File(cacheDir, "lumio-tag-$token-output.mp3")
+        try {
+            contentResolver.openInputStream(uri)?.use { input ->
+                inputFile.outputStream().use(input::copyTo)
+            } ?: throw IllegalStateException("无法读取 MP3 文件。")
+            val mp3File = Mp3File(inputFile.absolutePath)
+            val tag = if (mp3File.hasId3v2Tag()) {
+                mp3File.id3v2Tag
+            } else {
+                ID3v24Tag().also { mp3File.id3v2Tag = it }
+            }
+            if (title.isNotBlank()) {
+                tag.title = title
+            }
+            if (artist.isNotBlank()) {
+                tag.artist = artist
+            }
+            if (album.isNotBlank()) {
+                tag.album = album
+            }
+            mp3File.save(outputFile.absolutePath)
+            try {
+                contentResolver.openOutputStream(uri, "rwt")?.use { output ->
+                    outputFile.inputStream().use { it.copyTo(output) }
+                } ?: throw IllegalStateException("无法写入 MP3 文件。")
+            } catch (error: Exception) {
+                contentResolver.openOutputStream(uri, "rwt")?.use { output ->
+                    inputFile.inputStream().use { it.copyTo(output) }
+                }
+                throw error
+            }
+            contentResolver.update(
+                uri,
+                ContentValues().apply {
+                    if (title.isNotBlank()) {
+                        put(MediaStore.Audio.Media.TITLE, title)
+                    }
+                    if (artist.isNotBlank()) {
+                        put(MediaStore.Audio.Media.ARTIST, artist)
+                    }
+                    if (album.isNotBlank()) {
+                        put(MediaStore.Audio.Media.ALBUM, album)
+                    }
+                },
+                null,
+                null,
+            )
+            return 1
+        } finally {
+            inputFile.delete()
+            outputFile.delete()
+        }
+    }
+
+    private fun mediaDisplayName(uri: Uri): String {
+        return contentResolver.query(
+            uri,
+            arrayOf(MediaStore.MediaColumns.DISPLAY_NAME),
+            null,
+            null,
+            null,
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0).orEmpty() else ""
+        }.orEmpty()
+    }
+
     private fun createAppBackup(arguments: Any?, result: MethodChannel.Result) {
         try {
             val value = arguments as? Map<*, *> ?: emptyMap<String, Any?>()
             val text = JSONObject(value).toString()
-            appStateFile().writeText(text)
+            saveAppStatePartitions(value)
             val file = File(backupDirectory(), "lumio-backup-${System.currentTimeMillis()}.json")
             file.writeText(text)
             result.success(backupInfo(file))
@@ -184,8 +675,9 @@ class MainActivity : FlutterActivity() {
                 return
             }
             val text = file.readText()
-            appStateFile().writeText(text)
-            result.success(JSONObject(text).toMap())
+            val value = JSONObject(text).toMap()
+            saveAppStatePartitions(value)
+            result.success(value)
         } catch (error: Exception) {
             result.error("restoreFailed", error.message ?: "Restore backup failed.", null)
         }
@@ -196,20 +688,75 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
-        releaseMediaPlayer()
-        cancelPlaybackNotification()
-        abandonAudioFocus()
-        unregisterNoisyReceiver()
-        mediaSession?.release()
-        mediaSession = null
+        pendingFileOperation?.result?.success(
+            fileOperationResult("cancelled", "Activity 已关闭，文件操作未完成。"),
+        )
+        pendingFileOperation = null
+        equalizer?.release()
+        equalizer = null
+        releaseVideoSurface()
+        mediaController?.removeListener(mediaControllerListener)
+        mediaController = null
+        mediaControllerFuture?.let(MediaController::releaseFuture)
+        mediaControllerFuture = null
         flutterTextureRegistry = null
         playbackChannel = null
+        mediaScanExecutor.shutdownNow()
         super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handlePlaybackIntent(intent)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != fileOperationRequestCode) {
+            return
+        }
+        val operation = pendingFileOperation ?: return
+        pendingFileOperation = null
+        if (resultCode != Activity.RESULT_OK) {
+            operation.result.success(
+                fileOperationResult("cancelled", "已取消系统文件授权。"),
+            )
+            return
+        }
+        try {
+            completeMediaFileOperation(operation)
+        } catch (error: Exception) {
+            operation.result.success(
+                fileOperationResult(
+                    "failed",
+                    error.message ?: "文件操作失败。",
+                ),
+            )
+        }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (
+            Build.VERSION.SDK_INT in Build.VERSION_CODES.O until Build.VERSION_CODES.S &&
+            currentPlaybackKind == "video" &&
+            mediaController?.isPlaying == true &&
+            !isInPipMode
+        ) {
+            enterPipInternal()
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration,
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        isInPipMode = isInPictureInPictureMode
+        playbackChannel?.invokeMethod(
+            "pipModeChanged",
+            mapOf("isInPictureInPicture" to isInPictureInPictureMode),
+        )
     }
 
     private fun scanMediaLibrary(arguments: Any?, result: MethodChannel.Result) {
@@ -220,28 +767,88 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        try {
-            val filter = ScanFilter.from(arguments)
-            val audioItems = queryAudio(filter)
-            val videoItems = queryVideo(filter)
-            saveScanSnapshot(audioItems, videoItems)
-            result.success(
+        val filter = ScanFilter.from(arguments)
+        mediaScanExecutor.execute {
+            val response = try {
+                val audioItems = queryAudio(filter)
+                val videoItems = queryVideo(filter)
+                saveScanSnapshot(audioItems, videoItems)
                 mapOf(
                     "status" to "completed",
                     "audioItems" to audioItems,
                     "videoItems" to videoItems,
-                ),
-            )
-        } catch (error: Exception) {
-            result.success(
+                )
+            } catch (error: Exception) {
                 mapOf(
                     "status" to "failed",
                     "message" to (error.message ?: "MediaStore scan failed."),
                     "audioItems" to emptyList<Map<String, Any?>>(),
                     "videoItems" to emptyList<Map<String, Any?>>(),
-                ),
-            )
+                )
+            }
+            runOnUiThread {
+                result.success(response)
+            }
         }
+    }
+
+    private fun loadArtwork(arguments: Any?, result: MethodChannel.Result) {
+        val values = arguments as? Map<*, *> ?: emptyMap<String, Any?>()
+        val mediaId = values["mediaId"]?.toString().orEmpty()
+        val kind = values["kind"]?.toString().orEmpty()
+        val uri = mediaStoreUri(mediaId, kind)
+        if (uri == null) {
+            result.success(null)
+            return
+        }
+        mediaScanExecutor.execute {
+            val bytes = extractArtworkBytes(uri, kind)
+            runOnUiThread {
+                result.success(bytes)
+            }
+        }
+    }
+
+    private fun extractArtworkBytes(uri: Uri, kind: String): ByteArray? {
+        val retriever = MediaMetadataRetriever()
+        var bitmap: Bitmap? = null
+        return try {
+            retriever.setDataSource(this, uri)
+            bitmap = if (kind == "audio") {
+                retriever.embeddedPicture?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+            } else {
+                retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            }
+            val source = bitmap ?: return null
+            val scaled = scaleArtworkBitmap(source, 512)
+            ByteArrayOutputStream().use { output ->
+                scaled.compress(Bitmap.CompressFormat.JPEG, 84, output)
+                output.toByteArray()
+            }.also {
+                if (scaled !== source) {
+                    scaled.recycle()
+                }
+            }
+        } catch (_: Exception) {
+            null
+        } finally {
+            bitmap?.recycle()
+            retriever.release()
+        }
+    }
+
+    private fun scaleArtworkBitmap(source: Bitmap, maxEdge: Int): Bitmap {
+        val largestEdge = maxOf(source.width, source.height)
+        if (largestEdge <= maxEdge) {
+            return source
+        }
+        val scale = maxEdge.toFloat() / largestEdge.toFloat()
+        return Bitmap.createScaledBitmap(
+            source,
+            (source.width * scale).toInt().coerceAtLeast(1),
+            (source.height * scale).toInt().coerceAtLeast(1),
+            true,
+        )
     }
 
     private fun restoreLastScan(result: MethodChannel.Result) {
@@ -280,24 +887,36 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun loadAppState(result: MethodChannel.Result) {
-        val file = appStateFile()
-        if (!file.exists()) {
+    private fun loadAppStatePartition(arguments: Any?, result: MethodChannel.Result) {
+        val values = arguments as? Map<*, *> ?: emptyMap<String, Any?>()
+        val partition = values["partition"]?.toString().orEmpty()
+        val text = if (partition in appStatePartitions) {
+            appStateStorage().decodeString(partitionKey(partition))
+        } else {
+            null
+        }
+        if (text.isNullOrBlank()) {
             result.success(null)
             return
         }
 
         try {
-            result.success(JSONObject(file.readText()).toMap())
+            result.success(JSONObject(text).toMap())
         } catch (error: Exception) {
             result.success(null)
         }
     }
 
-    private fun saveAppState(arguments: Any?, result: MethodChannel.Result) {
+    private fun saveAppStatePartition(arguments: Any?, result: MethodChannel.Result) {
         try {
-            val value = arguments as? Map<*, *> ?: emptyMap<String, Any?>()
-            appStateFile().writeText(JSONObject(value).toString())
+            val values = arguments as? Map<*, *> ?: emptyMap<String, Any?>()
+            val partition = values["partition"]?.toString().orEmpty()
+            if (partition !in appStatePartitions) {
+                result.error("invalidPartition", "Unknown app storage partition.", null)
+                return
+            }
+            val value = values["value"] as? Map<*, *> ?: emptyMap<String, Any?>()
+            appStateStorage().encode(partitionKey(partition), JSONObject(value).toString())
             result.success(null)
         } catch (error: Exception) {
             result.error("saveFailed", error.message ?: "Save app state failed.", null)
@@ -306,63 +925,70 @@ class MainActivity : FlutterActivity() {
 
     private fun playMedia(arguments: Any?, result: MethodChannel.Result) {
         val values = arguments as? Map<*, *> ?: emptyMap<String, Any?>()
-        val path = values["path"]?.toString().orEmpty()
-        val mediaId = values["mediaId"]?.toString().orEmpty()
-        val kind = values["kind"]?.toString().orEmpty()
-        currentPlaybackTitle = values["title"]?.toString().orEmpty().ifBlank { "Lumio" }
-        currentPlaybackArtist = values["artist"]?.toString().orEmpty().ifBlank { "Local media" }
-        currentPlaybackAlbum = values["album"]?.toString().orEmpty()
-        val startPositionMs = (values["positionMs"] as? Number)?.toInt()
-            ?: values["positionMs"]?.toString()?.toIntOrNull()
-            ?: 0
-        if (path.isBlank()) {
-            result.error("invalidPath", "Media path is empty.", null)
+        val rawItems = values["items"] as? List<*> ?: emptyList<Any?>()
+        val mediaItems = rawItems.mapNotNull { raw ->
+            val item = raw as? Map<*, *> ?: return@mapNotNull null
+            val path = item["path"]?.toString().orEmpty()
+            val mediaId = item["mediaId"]?.toString().orEmpty()
+            if (path.isBlank() || mediaId.isBlank()) {
+                return@mapNotNull null
+            }
+            val kind = item["kind"]?.toString().orEmpty()
+            val extras = Bundle().apply { putString("kind", kind) }
+            Media3MediaItem.Builder()
+                .setMediaId(mediaId)
+                .setUri(mediaUri(path))
+                .setMediaMetadata(
+                    Media3MediaMetadata.Builder()
+                        .setTitle(item["title"]?.toString().orEmpty().ifBlank { "忆光" })
+                        .setArtist(
+                            item["artist"]?.toString().orEmpty().ifBlank { "本地媒体" },
+                        )
+                        .setAlbumTitle(item["album"]?.toString().orEmpty())
+                        .setExtras(extras)
+                        .build(),
+                )
+                .build()
+        }
+        val currentIndex = ((values["currentIndex"] as? Number)?.toInt()
+            ?: values["currentIndex"]?.toString()?.toIntOrNull()
+            ?: 0).coerceIn(0, (mediaItems.size - 1).coerceAtLeast(0))
+        val startPositionMs = (values["positionMs"] as? Number)?.toLong()
+            ?: values["positionMs"]?.toString()?.toLongOrNull()
+            ?: 0L
+        if (mediaItems.isEmpty()) {
+            result.error("invalidQueue", "Media3 queue is empty.", null)
             return
         }
 
-        try {
-            releaseMediaPlayer()
-            if (!requestAudioFocus()) {
-                result.error("audioFocusDenied", "Audio focus request was denied.", null)
-                return
+        val current = mediaItems[currentIndex]
+        currentPlaybackMediaId = current.mediaId
+        currentPlaybackTitle = current.mediaMetadata.title?.toString().orEmpty()
+        currentPlaybackArtist = current.mediaMetadata.artist?.toString().orEmpty()
+        currentPlaybackAlbum = current.mediaMetadata.albumTitle?.toString().orEmpty()
+        currentPlaybackKind = current.mediaMetadata.extras?.getString("kind").orEmpty()
+        completionEventSent = false
+        val textureId = if (currentPlaybackKind == "video") {
+            prepareVideoSurface()
+        } else {
+            releaseVideoSurface()
+            null
+        }
+        withMediaController(result, "playFailed") { controller ->
+            if (currentPlaybackKind == "video") {
+                videoSurface?.let(controller::setVideoSurface)
+            } else {
+                controller.clearVideoSurface()
             }
-            currentPlaybackMediaId = mediaId
-            val textureId = if (kind == "video") prepareVideoSurface() else null
-            mediaPlayer = MediaPlayer().apply {
-                setDataSource(path)
-                videoSurface?.let { setSurface(it) }
-                setOnCompletionListener {
-                    playbackChannel?.invokeMethod(
-                        "completed",
-                        mapOf("mediaId" to currentPlaybackMediaId),
-                    )
-                }
-                setOnErrorListener { _, what, extra ->
-                    playbackChannel?.invokeMethod(
-                        "error",
-                        mapOf(
-                            "mediaId" to currentPlaybackMediaId,
-                            "message" to "MediaPlayer error: $what/$extra",
-                        ),
-                    )
-                    true
-                }
-                prepare()
-                if (startPositionMs > 0) {
-                    seekTo(startPositionMs.coerceAtMost(duration))
-                }
-                applyPlaybackSpeed(this)
-                applyEqualizer(this)
-                applyVolumeScale(this)
-                start()
-            }
-            updatePlaybackState(true)
-            showPlaybackNotification(true)
-            result.success(mapOf("textureId" to textureId))
-        } catch (error: Exception) {
-            releaseMediaPlayer()
-            abandonAudioFocus()
-            result.error("playFailed", error.message ?: "Play media failed.", null)
+            controller.setMediaItems(mediaItems, currentIndex, startPositionMs.coerceAtLeast(0L))
+            controller.setPlaybackSpeed(playbackSpeed)
+            controller.volume = volumeScale
+            controller.prepare()
+            controller.play()
+            applyEqualizer(controller.audioSessionId)
+            updatePictureInPictureParams(true)
+            ensureNotificationPermission()
+            mapOf("textureId" to textureId)
         }
     }
 
@@ -372,11 +998,9 @@ class MainActivity : FlutterActivity() {
             ?: values["speed"]?.toString()?.toFloatOrNull()
             ?: 1.0f
         playbackSpeed = speed.coerceIn(0.5f, 2.0f)
-        try {
-            mediaPlayer?.let { applyPlaybackSpeed(it) }
-            result.success(null)
-        } catch (error: Exception) {
-            result.error("speedFailed", error.message ?: "Set playback speed failed.", null)
+        withMediaController(result, "speedFailed") { controller ->
+            controller.setPlaybackSpeed(playbackSpeed)
+            null
         }
     }
 
@@ -384,47 +1008,44 @@ class MainActivity : FlutterActivity() {
         val values = arguments as? Map<*, *> ?: emptyMap<String, Any?>()
         equalizerPreset = values["preset"]?.toString().orEmpty().ifBlank { "off" }
         customEqualizerGains = intListArgument(values["customGains"])
-        try {
-            mediaPlayer?.let { applyEqualizer(it) }
-            result.success(null)
-        } catch (error: Exception) {
-            result.error("equalizerFailed", error.message ?: "Set equalizer failed.", null)
+        withMediaController(result, "equalizerFailed") { controller ->
+            applyEqualizer(controller.audioSessionId)
+            null
         }
     }
 
     private fun setVolumeScale(arguments: Any?, result: MethodChannel.Result) {
         volumeScale = doubleArgument(arguments, "scale").toFloat().coerceIn(0f, 1f)
-        try {
-            mediaPlayer?.let { applyVolumeScale(it) }
-            result.success(null)
-        } catch (error: Exception) {
-            result.error("volumeScaleFailed", error.message ?: "Set playback volume failed.", null)
+        withMediaController(result, "volumeScaleFailed") { controller ->
+            controller.volume = volumeScale
+            null
+        }
+    }
+
+    private fun setCrossfadeDuration(arguments: Any?, result: MethodChannel.Result) {
+        val values = arguments as? Map<*, *> ?: emptyMap<String, Any?>()
+        val durationMs = (values["durationMs"] as? Number)?.toLong()
+            ?: values["durationMs"]?.toString()?.toLongOrNull()
+            ?: 0L
+        withMediaController(result, "crossfadeFailed") {
+            LumioPlaybackService.updateCrossfadeDuration(durationMs)
+            null
         }
     }
 
     private fun pauseMedia(result: MethodChannel.Result) {
-        try {
-            mediaPlayer?.takeIf { it.isPlaying }?.pause()
-            updatePlaybackState(false)
-            showPlaybackNotification(false)
-            result.success(null)
-        } catch (error: Exception) {
-            result.error("pauseFailed", error.message ?: "Pause media failed.", null)
+        withMediaController(result, "pauseFailed") { controller ->
+            controller.pause()
+            updatePictureInPictureParams(false)
+            null
         }
     }
 
     private fun resumeMedia(result: MethodChannel.Result) {
-        try {
-            if (!requestAudioFocus()) {
-                result.error("audioFocusDenied", "Audio focus request was denied.", null)
-                return
-            }
-            mediaPlayer?.start()
-            updatePlaybackState(true)
-            showPlaybackNotification(true)
-            result.success(null)
-        } catch (error: Exception) {
-            result.error("resumeFailed", error.message ?: "Resume media failed.", null)
+        withMediaController(result, "resumeFailed") { controller ->
+            controller.play()
+            updatePictureInPictureParams(true)
+            null
         }
     }
 
@@ -433,29 +1054,48 @@ class MainActivity : FlutterActivity() {
         val positionMs = (values["positionMs"] as? Number)?.toInt()
             ?: values["positionMs"]?.toString()?.toIntOrNull()
             ?: 0
-        try {
-            mediaPlayer?.let { player ->
-                player.seekTo(positionMs.coerceIn(0, player.duration.coerceAtLeast(0)))
-            }
-            result.success(null)
-        } catch (error: Exception) {
-            result.error("seekFailed", error.message ?: "Seek media failed.", null)
+        withMediaController(result, "seekFailed") { controller ->
+            controller.seekTo(positionMs.coerceAtLeast(0).toLong())
+            null
+        }
+    }
+
+    private fun setShuffleEnabled(arguments: Any?, result: MethodChannel.Result) {
+        val values = arguments as? Map<*, *> ?: emptyMap<String, Any?>()
+        withMediaController(result, "shuffleFailed") { controller ->
+            controller.shuffleModeEnabled = values["enabled"] == true
+            null
+        }
+    }
+
+    private fun setRepeatMode(arguments: Any?, result: MethodChannel.Result) {
+        val values = arguments as? Map<*, *> ?: emptyMap<String, Any?>()
+        val repeatMode = when (values["mode"]?.toString()) {
+            "one" -> Player.REPEAT_MODE_ONE
+            "all" -> Player.REPEAT_MODE_ALL
+            else -> Player.REPEAT_MODE_OFF
+        }
+        withMediaController(result, "repeatFailed") { controller ->
+            controller.repeatMode = repeatMode
+            null
         }
     }
 
     private fun stopMedia(result: MethodChannel.Result) {
         volumeScale = 1.0f
-        releaseMediaPlayer()
-        abandonAudioFocus()
-        cancelPlaybackNotification()
-        result.success(null)
+        updatePictureInPictureParams(false)
+        currentPlaybackKind = ""
+        releaseVideoSurface()
+        withMediaController(result, "stopFailed") { controller ->
+            controller.stop()
+            controller.clearMediaItems()
+            null
+        }
     }
 
     private fun playbackPosition(result: MethodChannel.Result) {
-        try {
-            result.success(mediaPlayer?.currentPosition ?: 0)
-        } catch (error: Exception) {
-            result.success(0)
+        withMediaController(result, "positionFailed") { controller ->
+            controller.currentPosition
         }
     }
 
@@ -464,12 +1104,70 @@ class MainActivity : FlutterActivity() {
             result.success(false)
             return
         }
+        if (currentPlaybackKind != "video") {
+            result.success(false)
+            return
+        }
         try {
-            enterPictureInPictureMode(PictureInPictureParams.Builder().build())
-            result.success(true)
+            result.success(enterPipInternal())
         } catch (error: Exception) {
             result.error("pipFailed", error.message ?: "Enter PiP failed.", null)
         }
+    }
+
+    private fun enterPipInternal(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || isInPipMode) {
+            return false
+        }
+        return enterPictureInPictureMode(
+            buildPictureInPictureParams(mediaController?.isPlaying == true),
+        )
+    }
+
+    private fun updatePictureInPictureParams(isPlaying: Boolean) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || currentPlaybackKind != "video") {
+            return
+        }
+        setPictureInPictureParams(buildPictureInPictureParams(isPlaying))
+    }
+
+    private fun buildPictureInPictureParams(isPlaying: Boolean): PictureInPictureParams {
+        val builder = PictureInPictureParams.Builder()
+            .setAspectRatio(Rational(16, 9))
+            .setActions(pictureInPictureActions(isPlaying))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setAutoEnterEnabled(currentPlaybackKind == "video" && isPlaying)
+            builder.setSeamlessResizeEnabled(true)
+        }
+        return builder.build()
+    }
+
+    private fun pictureInPictureActions(isPlaying: Boolean): List<RemoteAction> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return emptyList()
+        }
+        val playPauseTitle = if (isPlaying) "暂停" else "播放"
+        val playPauseIcon = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+        return listOf(
+            RemoteAction(
+                Icon.createWithResource(this, android.R.drawable.ic_media_previous),
+                "上一首",
+                "上一首",
+                playbackActionIntent(actionPrevious, 11),
+            ),
+            RemoteAction(
+                Icon.createWithResource(this, playPauseIcon),
+                playPauseTitle,
+                playPauseTitle,
+                playbackActionIntent(actionPlayPause, 12),
+            ),
+            RemoteAction(
+                Icon.createWithResource(this, android.R.drawable.ic_media_next),
+                "下一首",
+                "下一首",
+                playbackActionIntent(actionNext, 13),
+            ),
+        )
     }
 
     private fun adjustBrightness(arguments: Any?, result: MethodChannel.Result) {
@@ -560,14 +1258,21 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun pauseForSystem(method: String) {
+    private fun pauseForSystem(method: String, mayResume: Boolean? = null) {
         try {
             mediaPlayer?.takeIf { it.isPlaying }?.pause()
             updatePlaybackState(false)
+            updatePictureInPictureParams(false)
             showPlaybackNotification(false)
-            playbackChannel?.invokeMethod(method, null)
+            playbackChannel?.invokeMethod(
+                method,
+                mayResume?.let { mapOf("mayResume" to it) },
+            )
         } catch (_: Exception) {
-            playbackChannel?.invokeMethod(method, null)
+            playbackChannel?.invokeMethod(
+                method,
+                mayResume?.let { mapOf("mayResume" to it) },
+            )
         }
     }
 
@@ -620,6 +1325,29 @@ class MainActivity : FlutterActivity() {
         )
     }
 
+    private fun updateMediaSessionMetadata() {
+        mediaSession?.setMetadata(
+            MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_TITLE, currentPlaybackTitle)
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, currentPlaybackArtist)
+                .putString(MediaMetadata.METADATA_KEY_ALBUM, currentPlaybackAlbum)
+                .putLong(
+                    MediaMetadata.METADATA_KEY_DURATION,
+                    mediaPlayer?.duration?.toLong() ?: 0L,
+                )
+                .build(),
+        )
+    }
+
+    private fun ensureNotificationPermission() {
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 2409)
+        }
+    }
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             return
@@ -627,10 +1355,10 @@ class MainActivity : FlutterActivity() {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channel = NotificationChannel(
             notificationChannelId,
-            "Lumio playback",
+            "忆光播放",
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "Local media playback controls"
+            description = "本地媒体播放控制"
             setShowBadge(false)
         }
         manager.createNotificationChannel(channel)
@@ -653,7 +1381,7 @@ class MainActivity : FlutterActivity() {
             Intent(this, MainActivity::class.java),
             pendingIntentFlags(),
         )
-        val playPauseTitle = if (isPlaying) "Pause" else "Play"
+        val playPauseTitle = if (isPlaying) "暂停" else "播放"
         val playPauseIcon = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, notificationChannelId)
@@ -668,7 +1396,7 @@ class MainActivity : FlutterActivity() {
                 listOf(currentPlaybackArtist, currentPlaybackAlbum)
                     .filter { it.isNotBlank() }
                     .joinToString(" • ")
-                    .ifBlank { "Lumio" },
+                    .ifBlank { "忆光" },
             )
             .setContentIntent(contentIntent)
             .setOngoing(isPlaying)
@@ -681,7 +1409,7 @@ class MainActivity : FlutterActivity() {
             )
             .addAction(
                 android.R.drawable.ic_media_previous,
-                "Previous",
+                "上一首",
                 playbackActionIntent(actionPrevious, 1),
             )
             .addAction(
@@ -691,7 +1419,7 @@ class MainActivity : FlutterActivity() {
             )
             .addAction(
                 android.R.drawable.ic_media_next,
-                "Next",
+                "下一首",
                 playbackActionIntent(actionNext, 3),
             )
             .build()
@@ -713,18 +1441,15 @@ class MainActivity : FlutterActivity() {
     private fun handlePlaybackIntent(intent: Intent?) {
         when (intent?.action) {
             actionPlayPause -> {
-                val isPlaying = mediaPlayer?.isPlaying == true
-                if (isPlaying) {
-                    mediaPlayer?.pause()
-                    updatePlaybackState(false)
-                    showPlaybackNotification(false)
-                    playbackChannel?.invokeMethod("pause", null)
+                val controller = mediaController
+                if (controller?.isPlaying == true) {
+                    controller.pause()
                 } else {
-                    playbackChannel?.invokeMethod("play", null)
+                    controller?.play()
                 }
             }
-            actionNext -> playbackChannel?.invokeMethod("next", null)
-            actionPrevious -> playbackChannel?.invokeMethod("previous", null)
+            actionNext -> mediaController?.seekToNextMediaItem()
+            actionPrevious -> mediaController?.seekToPreviousMediaItem()
         }
     }
 
@@ -745,6 +1470,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun prepareVideoSurface(): Long? {
+        releaseVideoSurface()
         val textureRegistry = flutterTextureRegistry ?: return null
         videoTextureEntry = textureRegistry.createSurfaceTexture()
         val texture = videoTextureEntry?.surfaceTexture() ?: return null
@@ -757,6 +1483,18 @@ class MainActivity : FlutterActivity() {
         return textureId
     }
 
+    private fun releaseVideoSurface() {
+        mediaController?.clearVideoSurface()
+        videoSurface?.release()
+        videoSurface = null
+        videoTextureEntry?.release()
+        videoTextureEntry = null
+        playbackChannel?.invokeMethod(
+            "videoTextureChanged",
+            mapOf("textureId" to null),
+        )
+    }
+
     private fun applyPlaybackSpeed(player: MediaPlayer) {
         player.playbackParams = player.playbackParams.setSpeed(playbackSpeed)
     }
@@ -766,12 +1504,16 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun applyEqualizer(player: MediaPlayer) {
+        applyEqualizer(player.audioSessionId)
+    }
+
+    private fun applyEqualizer(audioSessionId: Int) {
         equalizer?.release()
         equalizer = null
-        if (equalizerPreset == "off") {
+        if (equalizerPreset == "off" || audioSessionId <= 0) {
             return
         }
-        equalizer = Equalizer(0, player.audioSessionId).apply {
+        equalizer = Equalizer(0, audioSessionId).apply {
             enabled = true
             val bandCount = numberOfBands.toInt()
             val range = bandLevelRange
@@ -816,14 +1558,7 @@ class MainActivity : FlutterActivity() {
         mediaPlayer?.setSurface(null)
         mediaPlayer?.release()
         mediaPlayer = null
-        videoSurface?.release()
-        videoSurface = null
-        videoTextureEntry?.release()
-        videoTextureEntry = null
-        playbackChannel?.invokeMethod(
-            "videoTextureChanged",
-            mapOf("textureId" to null),
-        )
+        releaseVideoSurface()
         currentPlaybackMediaId = null
         updatePlaybackState(false)
     }
@@ -952,8 +1687,8 @@ class MainActivity : FlutterActivity() {
             "id" to "android-audio-$id",
             "kind" to "audio",
             "title" to cursor.string(MediaStore.Audio.Media.TITLE).ifBlank { File(path).nameWithoutExtension },
-            "artist" to cursor.string(MediaStore.Audio.Media.ARTIST).ifBlank { "Unknown artist" },
-            "album" to cursor.string(MediaStore.Audio.Media.ALBUM).ifBlank { "Unknown album" },
+            "artist" to cursor.string(MediaStore.Audio.Media.ARTIST).ifBlank { "未知艺术家" },
+            "album" to cursor.string(MediaStore.Audio.Media.ALBUM).ifBlank { "未知专辑" },
             "durationMs" to cursor.long(MediaStore.Audio.Media.DURATION),
             "addedAtMs" to cursor.long(MediaStore.Audio.Media.DATE_ADDED) * 1000,
             "path" to path,
@@ -975,8 +1710,8 @@ class MainActivity : FlutterActivity() {
             "id" to "android-video-$id",
             "kind" to "video",
             "title" to cursor.string(MediaStore.Video.Media.TITLE).ifBlank { File(path).nameWithoutExtension },
-            "artist" to "Camera Roll",
-            "album" to File(path).parentFile?.name.orEmpty().ifBlank { "Videos" },
+            "artist" to "相机胶卷",
+            "album" to File(path).parentFile?.name.orEmpty().ifBlank { "视频" },
             "durationMs" to cursor.long(MediaStore.Video.Media.DURATION),
             "addedAtMs" to cursor.long(MediaStore.Video.Media.DATE_ADDED) * 1000,
             "path" to path,
@@ -1050,13 +1785,31 @@ class MainActivity : FlutterActivity() {
         return File(filesDir, "media_library_snapshot.json")
     }
 
-    private fun appStateFile(): File {
-        return File(filesDir, "lumio_state.json")
+    private fun appStateStorage(): MMKV {
+        return MMKV.defaultMMKV()
+    }
+
+    private fun partitionKey(partition: String): String {
+        return "state_$partition"
+    }
+
+    private fun saveAppStatePartitions(value: Map<*, *>) {
+        val libraryKeys = setOf("schemaVersion", "audioItems", "videoItems")
+        val playlistKeys = setOf("schemaVersion", "playlists")
+        val session = value.filterKeys {
+            it?.toString() !in setOf("audioItems", "videoItems", "playlists")
+        }
+        val library = value.filterKeys { it?.toString() in libraryKeys }
+        val playlists = value.filterKeys { it?.toString() in playlistKeys }
+        val storage = appStateStorage()
+        storage.encode(partitionKey("session"), JSONObject(session).toString())
+        storage.encode(partitionKey("library"), JSONObject(library).toString())
+        storage.encode(partitionKey("playlists"), JSONObject(playlists).toString())
     }
 
     private fun backupDirectory(): File {
         val documents = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) ?: filesDir
-        return File(documents, "Lumio/backups").apply { mkdirs() }
+        return File(documents, "忆光/backups").apply { mkdirs() }
     }
 
     private fun latestBackupFile(): File? {

@@ -8,10 +8,15 @@ class AppBackupInfo {
   final DateTime updatedAt;
 }
 
+enum AppStoragePartition { session, library, playlists }
+
 abstract class AppStorageRepository {
   Future<Map<String, Object?>?> load();
 
-  Future<void> save(Map<String, Object?> value);
+  Future<void> save(
+    Map<String, Object?> value, {
+    required Set<AppStoragePartition> partitions,
+  });
 
   Future<AppBackupInfo?> createBackup(Map<String, Object?> value);
 

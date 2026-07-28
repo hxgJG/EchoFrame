@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
+import '../../app/theme.dart';
 import '../../core/models/media_item.dart';
 import '../../shared/widgets/media_tile.dart';
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key, required this.state});
 
-  final EchoAppState state;
+  final LumioAppState state;
 
   @override
   State<SearchPage> createState() => _SearchPageState();
@@ -79,7 +80,10 @@ class _SearchPageState extends State<SearchPage> {
                   item.kind == MediaKind.audio
                       ? Icons.music_note_rounded
                       : Icons.movie_rounded,
-                  color: scheme.primary,
+                  color: LumioTheme.mediaColor(
+                    item.kind,
+                    scheme.brightness,
+                  ),
                 ),
               ),
             ),

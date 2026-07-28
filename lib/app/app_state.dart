@@ -3,13 +3,18 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
-import '../core/models/echo_settings.dart';
+import '../core/models/lumio_settings.dart';
 import '../core/models/media_item.dart';
 import '../core/models/playlist.dart';
+import '../core/lyrics/lrc_parser.dart';
+import '../core/playback/playback_interruption_controller.dart';
 import '../platform/app_storage/app_storage_repository.dart';
 import '../platform/app_storage/platform_app_storage_repository.dart';
+import '../platform/media_library/media_file_operation.dart';
 import '../platform/media_library/media_library_repository.dart';
 import '../platform/media_library/platform_media_library_repository.dart';
+import '../platform/media_library/media_visibility.dart';
+import '../platform/online_enhancement/online_enhancement_repository.dart';
 import '../platform/playback/playback_repository.dart';
 import '../platform/playback/platform_playback_repository.dart';
 import 'seed_data.dart';
@@ -18,21 +23,24 @@ enum AppSection { home, music, playlists, video, settings }
 
 enum MusicSort { title, addedAt, duration, playCount, fileSize }
 
-class EchoAppState extends ChangeNotifier {
-  EchoAppState({
+class LumioAppState extends ChangeNotifier {
+  LumioAppState({
     MediaLibraryRepository mediaLibraryRepository =
         const PlatformMediaLibraryRepository(),
     AppStorageRepository appStorageRepository =
         const PlatformAppStorageRepository(),
     PlaybackRepository? playbackRepository,
+    OnlineEnhancementRepository? onlineEnhancementRepository,
   })  : _mediaLibraryRepository = mediaLibraryRepository,
         _appStorageRepository = appStorageRepository,
         _playbackRepository =
             playbackRepository ?? PlatformPlaybackRepository(),
+        _onlineEnhancementRepository =
+            onlineEnhancementRepository ?? FileOnlineEnhancementRepository(),
         _audioItems = List<MediaItem>.from(seedAudioItems),
         _videoItems = List<MediaItem>.from(seedVideoItems),
         _playlists = List<Playlist>.from(seedPlaylists) {
-    _currentItem = _audioItems.first;
+    _currentItem = _audioItems.isNotEmpty ? _audioItems.first : null;
     _playbackEventSubscription =
         _playbackRepository.events.listen(_handlePlaybackEvent);
     _restorePersistedState();
@@ -41,7 +49,10 @@ class EchoAppState extends ChangeNotifier {
   final MediaLibraryRepository _mediaLibraryRepository;
   final AppStorageRepository _appStorageRepository;
   final PlaybackRepository _playbackRepository;
+  final OnlineEnhancementRepository _onlineEnhancementRepository;
   final Random _random = Random(7);
+  final PlaybackInterruptionController _interruptionController =
+      PlaybackInterruptionController();
   late final StreamSubscription<PlaybackEvent> _playbackEventSubscription;
   Timer? _positionTimer;
   Timer? _sleepTimer;
@@ -50,7 +61,8 @@ class EchoAppState extends ChangeNotifier {
   List<MediaItem> _videoItems;
   List<Playlist> _playlists;
   List<String> _queueIds = const <String>[];
-  EchoSettings _settings = const EchoSettings();
+  Set<String> _hiddenMediaIds = <String>{};
+  LumioSettings _settings = const LumioSettings();
   AppSection _section = AppSection.home;
   MusicSort _musicSort = MusicSort.addedAt;
   MediaItem? _currentItem;
@@ -61,23 +73,31 @@ class EchoAppState extends ChangeNotifier {
   Duration _position = const Duration(minutes: 1, seconds: 12);
   bool _isScanningLibrary = false;
   MediaLibraryScanStatus? _lastScanStatus;
-  String _libraryStatusMessage = '当前使用离线演示媒体。';
+  String _libraryStatusMessage = '尚未扫描本机媒体。';
   int? _videoTextureId;
   String _backupStatusMessage = '播放列表和设置项会自动离线保存。';
+  bool _isInPictureInPicture = false;
   double _playbackSpeed = 1.0;
   DateTime? _sleepTimerEndsAt;
   Duration? _abLoopStart;
   Duration? _abLoopEnd;
   DateTime? _lastResumePositionSaveAt;
+  final Set<String> _onlineEnhancementRequests = <String>{};
   static const Duration _resumeEndThreshold = Duration(seconds: 5);
-  static const Duration _resumeSaveInterval = Duration(seconds: 5);
+  static const Duration _resumeSaveInterval = Duration(seconds: 30);
   static const Duration _sleepFadeDuration = Duration(seconds: 10);
+  static const Set<AppStoragePartition> _allStoragePartitions =
+      <AppStoragePartition>{
+    AppStoragePartition.session,
+    AppStoragePartition.library,
+    AppStoragePartition.playlists,
+  };
 
   List<MediaItem> get audioItems => _sortedAudioItems();
   List<MediaItem> get videoItems => List<MediaItem>.unmodifiable(_videoItems);
   List<Playlist> get playlists => List<Playlist>.unmodifiable(_playlists);
   List<MediaItem> get queueItems => _itemsForIds(_queueIds);
-  EchoSettings get settings => _settings;
+  LumioSettings get settings => _settings;
   AppSection get section => _section;
   MusicSort get musicSort => _musicSort;
   MediaItem? get currentItem => _currentItem;
@@ -90,6 +110,8 @@ class EchoAppState extends ChangeNotifier {
   MediaLibraryScanStatus? get lastScanStatus => _lastScanStatus;
   String get libraryStatusMessage => _libraryStatusMessage;
   int? get videoTextureId => _videoTextureId;
+  bool get isInPictureInPicture => _isInPictureInPicture;
+  int get hiddenMediaCount => _hiddenMediaIds.length;
   String get backupStatusMessage => _backupStatusMessage;
   double get playbackSpeed => _playbackSpeed;
   String get sleepTimerLabel {
@@ -235,6 +257,7 @@ class EchoAppState extends ChangeNotifier {
   }
 
   void play(MediaItem item) {
+    _interruptionController.cancelPendingResume();
     final startPosition = _initialPlaybackPosition(item);
     _currentItem = item.copyWith(playCount: item.playCount + 1);
     _position = startPosition;
@@ -242,8 +265,19 @@ class EchoAppState extends ChangeNotifier {
     _replaceItem(_currentItem!);
     _startPositionTimer();
     _playbackRepository.setSpeed(_playbackSpeed);
+    _playbackRepository.setCrossfadeDuration(
+      Duration(seconds: _settings.crossfadeSeconds),
+    );
     _applyEqualizerPreset();
-    _playbackRepository.play(_currentItem!, _position).catchError(
+    _playbackRepository.setShuffleEnabled(_shuffleEnabled);
+    _playbackRepository.setRepeatMode(_repeatMode);
+    _playbackRepository
+        .play(
+      _currentItem!,
+      _position,
+      queue: _nativePlaybackQueue(_currentItem!),
+    )
+        .catchError(
       (Object error) {
         _isPlaying = false;
         _stopPositionTimer();
@@ -257,11 +291,18 @@ class EchoAppState extends ChangeNotifier {
         notifyListeners();
       },
     );
-    _saveState();
+    _saveState(
+      partitions: const <AppStoragePartition>{
+        AppStoragePartition.session,
+        AppStoragePartition.library,
+      },
+    );
+    unawaited(_loadOnlineEnhancement(_currentItem!));
     notifyListeners();
   }
 
   void togglePlaying() {
+    _interruptionController.cancelPendingResume();
     if (_currentItem == null) {
       _currentItem = _audioItems.isNotEmpty
           ? _audioItems.first
@@ -280,7 +321,13 @@ class EchoAppState extends ChangeNotifier {
         (Object error) {
           final item = _currentItem;
           if (item != null) {
-            _playbackRepository.play(item, _position).catchError(
+            _playbackRepository
+                .play(
+              item,
+              _position,
+              queue: _nativePlaybackQueue(item),
+            )
+                .catchError(
               (Object retryError) {
                 _isPlaying = false;
                 _stopPositionTimer();
@@ -349,6 +396,7 @@ class EchoAppState extends ChangeNotifier {
 
   void toggleShuffle() {
     _shuffleEnabled = !_shuffleEnabled;
+    _playbackRepository.setShuffleEnabled(_shuffleEnabled);
     _saveState();
     notifyListeners();
   }
@@ -359,6 +407,7 @@ class EchoAppState extends ChangeNotifier {
       RepeatMode.all => RepeatMode.one,
       RepeatMode.one => RepeatMode.off,
     };
+    _playbackRepository.setRepeatMode(_repeatMode);
     _saveState();
     notifyListeners();
   }
@@ -423,6 +472,109 @@ class EchoAppState extends ChangeNotifier {
       _saveState();
       notifyListeners();
     });
+  }
+
+  void shareMany(Iterable<String> mediaIds) {
+    final items = mediaIds.map(_findItem).whereType<MediaItem>().toList();
+    if (items.isEmpty) {
+      return;
+    }
+    _playbackRepository.shareMany(items).catchError((Object error) {
+      _libraryStatusMessage = '批量分享失败：$error';
+      _saveState();
+      notifyListeners();
+    });
+  }
+
+  Future<MediaFileOperationResult> deleteMediaFiles(
+    Iterable<String> mediaIds,
+  ) async {
+    final ids = mediaIds.where((id) => _findItem(id) != null).toSet();
+    if (ids.isEmpty) {
+      return const MediaFileOperationResult(
+        status: MediaFileOperationStatus.failed,
+        message: '没有可从列表移除的媒体。',
+      );
+    }
+    if (ids.contains(_currentItem?.id)) {
+      _stopPlayback();
+    }
+    _hiddenMediaIds = <String>{..._hiddenMediaIds, ...ids};
+    _audioItems = visibleMediaItems(_audioItems, ids);
+    _videoItems = visibleMediaItems(_videoItems, ids);
+    _queueIds = _queueIds.where((id) => !ids.contains(id)).toList();
+    if (ids.contains(_currentItem?.id)) {
+      _currentItem = _audioItems.isNotEmpty
+          ? _audioItems.first
+          : _videoItems.isNotEmpty
+              ? _videoItems.first
+              : null;
+    }
+    _libraryStatusMessage = '已从忆光媒体库移除 ${ids.length} 个媒体，设备源文件未删除。';
+    _saveState(
+      partitions: const <AppStoragePartition>{
+        AppStoragePartition.session,
+        AppStoragePartition.library,
+      },
+    );
+    notifyListeners();
+    return MediaFileOperationResult(
+      status: MediaFileOperationStatus.completed,
+      message: _libraryStatusMessage,
+      affectedMediaIds: ids.toList(growable: false),
+    );
+  }
+
+  Future<void> restoreHiddenMedia() async {
+    if (_hiddenMediaIds.isEmpty) {
+      return;
+    }
+    _hiddenMediaIds = <String>{};
+    _saveState();
+    await scanMediaLibrary();
+  }
+
+  Future<MediaFileOperationResult> renameMediaFile(
+    String mediaId,
+    String displayName,
+  ) {
+    return _performFileOperation(
+      MediaFileOperationRequest.rename(
+        mediaId: mediaId,
+        displayName: displayName,
+      ),
+    );
+  }
+
+  Future<MediaFileOperationResult> moveMediaFiles(
+    Iterable<String> mediaIds,
+    String relativePath,
+  ) {
+    return _performFileOperation(
+      MediaFileOperationRequest.move(
+        mediaIds: mediaIds.toList(growable: false),
+        relativePath: relativePath,
+      ),
+    );
+  }
+
+  Future<MediaFileOperationResult> writeMediaTags(
+    String mediaId, {
+    required String title,
+    required String artist,
+    required String album,
+  }) {
+    if (_currentItem?.id == mediaId) {
+      _stopPlayback();
+    }
+    return _performFileOperation(
+      MediaFileOperationRequest.writeTags(
+        mediaId: mediaId,
+        title: title,
+        artist: artist,
+        album: album,
+      ),
+    );
   }
 
   void setPlaybackSpeed(double speed) {
@@ -606,7 +758,11 @@ class EchoAppState extends ChangeNotifier {
       return;
     }
     _replaceItem(current.copyWith(isFavorite: !current.isFavorite));
-    _saveState();
+    _saveState(
+      partitions: const <AppStoragePartition>{
+        AppStoragePartition.library,
+      },
+    );
     notifyListeners();
   }
 
@@ -636,7 +792,11 @@ class EchoAppState extends ChangeNotifier {
             nextAlbum == null || nextAlbum.isEmpty ? current.album : nextAlbum,
       ),
     );
-    _saveState();
+    _saveState(
+      partitions: const <AppStoragePartition>{
+        AppStoragePartition.library,
+      },
+    );
     notifyListeners();
   }
 
@@ -650,10 +810,41 @@ class EchoAppState extends ChangeNotifier {
     _settings = _settings.copyWith(allowOnlineEnhancement: value);
     _saveState();
     notifyListeners();
+    final item = _currentItem;
+    if (value && item != null) {
+      unawaited(_loadOnlineEnhancement(item));
+    }
   }
 
   void toggleDynamicColor(bool value) {
     _settings = _settings.copyWith(dynamicColor: value);
+    _saveState();
+    notifyListeners();
+  }
+
+  void toggleCrossfade(bool enabled) {
+    _settings = _settings.withCrossfadeEnabled(enabled);
+    _playbackRepository.setCrossfadeDuration(
+      Duration(seconds: _settings.crossfadeSeconds),
+    );
+    _saveState();
+    notifyListeners();
+  }
+
+  void setThemeAccent(ThemeAccent accent) {
+    if (_settings.themeAccent == accent) {
+      return;
+    }
+    _settings = _settings.copyWith(themeAccent: accent);
+    _saveState();
+    notifyListeners();
+  }
+
+  void setMusicViewMode(MusicViewMode mode) {
+    if (_settings.musicViewMode == mode) {
+      return;
+    }
+    _settings = _settings.copyWith(musicViewMode: mode);
     _saveState();
     notifyListeners();
   }
@@ -727,7 +918,7 @@ class EchoAppState extends ChangeNotifier {
       updatedAt: now,
     );
     _playlists = <Playlist>[playlist, ..._playlists];
-    _saveState();
+    _savePlaylists();
     notifyListeners();
   }
 
@@ -743,7 +934,7 @@ class EchoAppState extends ChangeNotifier {
               : playlist,
         )
         .toList(growable: false);
-    _saveState();
+    _savePlaylists();
     notifyListeners();
   }
 
@@ -751,7 +942,7 @@ class EchoAppState extends ChangeNotifier {
     _playlists = _playlists
         .where((playlist) => playlist.id != playlistId)
         .toList(growable: false);
-    _saveState();
+    _savePlaylists();
     notifyListeners();
   }
 
@@ -765,7 +956,7 @@ class EchoAppState extends ChangeNotifier {
         updatedAt: DateTime.now(),
       );
     }).toList(growable: false);
-    _saveState();
+    _savePlaylists();
     notifyListeners();
   }
 
@@ -789,7 +980,7 @@ class EchoAppState extends ChangeNotifier {
     if (!changed) {
       return;
     }
-    _saveState();
+    _savePlaylists();
     notifyListeners();
   }
 
@@ -805,7 +996,7 @@ class EchoAppState extends ChangeNotifier {
         updatedAt: DateTime.now(),
       );
     }).toList(growable: false);
-    _saveState();
+    _savePlaylists();
     notifyListeners();
   }
 
@@ -831,7 +1022,7 @@ class EchoAppState extends ChangeNotifier {
     if (!changed) {
       return;
     }
-    _saveState();
+    _savePlaylists();
     notifyListeners();
   }
 
@@ -847,7 +1038,7 @@ class EchoAppState extends ChangeNotifier {
       _reorder(mediaIds, oldIndex, newIndex);
       return playlist.copyWith(mediaIds: mediaIds, updatedAt: DateTime.now());
     }).toList(growable: false);
-    _saveState();
+    _savePlaylists();
     notifyListeners();
   }
 
@@ -914,7 +1105,7 @@ class EchoAppState extends ChangeNotifier {
       return;
     }
     _isScanningLibrary = true;
-    _libraryStatusMessage = '正在扫描本机音频和视频...';
+    _libraryStatusMessage = '正在扫描或导入本机音频和视频...';
     notifyListeners();
 
     final result = await _mediaLibraryRepository.scan(
@@ -924,11 +1115,74 @@ class EchoAppState extends ChangeNotifier {
         excludedFolders: _settings.excludedFolders,
       ),
     );
-    _stopPlayback();
-    _applyScanResult(result, emptyCompletedMessage: '扫描完成，但没有找到符合条件的本地媒体。');
+    if (result.status == MediaLibraryScanStatus.completed) {
+      _stopPlayback();
+    }
+    _applyScanResult(
+      result,
+      emptyCompletedMessage: '没有找到或导入符合条件的本地媒体。',
+    );
     _isScanningLibrary = false;
-    _saveState();
+    _saveState(
+      partitions: const <AppStoragePartition>{
+        AppStoragePartition.session,
+        AppStoragePartition.library,
+      },
+    );
     notifyListeners();
+  }
+
+  Future<MediaFileOperationResult> _performFileOperation(
+    MediaFileOperationRequest request,
+  ) async {
+    final result = await _mediaLibraryRepository.performFileOperation(request);
+    _libraryStatusMessage = result.message;
+    if (result.didChangeFiles) {
+      await scanMediaLibrary();
+      _libraryStatusMessage = result.message;
+      _saveState();
+    } else {
+      _saveState();
+      notifyListeners();
+    }
+    return result;
+  }
+
+  Future<void> _loadOnlineEnhancement(MediaItem item) async {
+    if (!_onlineEnhancementRequests.add(item.id)) {
+      return;
+    }
+    try {
+      final enhancement = await _onlineEnhancementRepository.fetch(
+        item,
+        enabled: _settings.allowOnlineEnhancement,
+      );
+      if (!_settings.allowOnlineEnhancement || enhancement.isEmpty) {
+        return;
+      }
+      final current = _findItem(item.id);
+      if (current == null) {
+        return;
+      }
+      final fetchedLyrics = enhancement.lyricsText == null
+          ? const <LyricLine>[]
+          : parseLrc(enhancement.lyricsText!);
+      final updated = current.copyWith(
+        lyrics: current.lyrics.isEmpty && fetchedLyrics.isNotEmpty
+            ? fetchedLyrics
+            : current.lyrics,
+        artworkPath: enhancement.artworkPath,
+      );
+      _replaceItem(updated);
+      _saveState(
+        partitions: const <AppStoragePartition>{
+          AppStoragePartition.library,
+        },
+      );
+      notifyListeners();
+    } finally {
+      _onlineEnhancementRequests.remove(item.id);
+    }
   }
 
   Future<void> createBackup() async {
@@ -950,7 +1204,7 @@ class EchoAppState extends ChangeNotifier {
     }
     _backupStatusMessage = '已从最近备份恢复。';
     _stopPlayback();
-    _saveState();
+    _saveState(partitions: _allStoragePartitions);
     notifyListeners();
   }
 
@@ -971,27 +1225,42 @@ class EchoAppState extends ChangeNotifier {
     _applyScanResult(result, emptyCompletedMessage: '');
     _libraryStatusMessage =
         '已恢复上次扫描：${_audioItems.length} 首音频、${_videoItems.length} 个视频。';
-    _saveState();
+    _saveState(
+      partitions: const <AppStoragePartition>{
+        AppStoragePartition.session,
+        AppStoragePartition.library,
+      },
+    );
     notifyListeners();
   }
 
   bool _applyPersistedState(Map<String, Object?> json) {
-    final audioItems = _parseMediaItems(json['audioItems']);
-    final videoItems = _parseMediaItems(json['videoItems']);
-    if (audioItems.isEmpty && videoItems.isEmpty) {
-      return false;
-    }
+    _hiddenMediaIds = _asStringList(json['hiddenMediaIds']).toSet();
+    final audioItems = visibleMediaItems(
+      _dropRemovedSeedItems(_parseMediaItems(json['audioItems'])),
+      _hiddenMediaIds,
+    );
+    final videoItems = visibleMediaItems(
+      _dropRemovedSeedItems(_parseMediaItems(json['videoItems'])),
+      _hiddenMediaIds,
+    );
 
     _audioItems = audioItems;
     _videoItems = videoItems;
-    _playlists = _parsePlaylists(json['playlists']);
-    if (_playlists.isEmpty) {
-      _playlists = List<Playlist>.from(seedPlaylists);
-    }
-    _queueIds = _asStringList(json['queueIds']);
+    final validMediaIds = _mediaIdsFor(<MediaItem>[
+      ..._audioItems,
+      ..._videoItems,
+    ]);
+    _playlists = _dropRemovedSeedPlaylists(
+      _parsePlaylists(json['playlists']),
+      validMediaIds,
+    );
+    _queueIds = _asStringList(json['queueIds'])
+        .where(validMediaIds.contains)
+        .toList(growable: false);
     final settings = json['settings'];
     if (settings is Map<Object?, Object?>) {
-      _settings = EchoSettings.fromJson(settings.cast<String, Object?>());
+      _settings = LumioSettings.fromJson(settings.cast<String, Object?>());
     }
     _musicSort = _enumFromName(
       MusicSort.values,
@@ -1027,7 +1296,14 @@ class EchoAppState extends ChangeNotifier {
             : null;
     _isPlaying = false;
     _playbackRepository.setSpeed(_playbackSpeed);
+    _playbackRepository.setCrossfadeDuration(
+      Duration(seconds: _settings.crossfadeSeconds),
+    );
     _applyEqualizerPreset();
+    if (_audioItems.isEmpty && _videoItems.isEmpty) {
+      _libraryStatusMessage = '尚未扫描本机媒体。';
+      _saveState();
+    }
     return true;
   }
 
@@ -1039,6 +1315,32 @@ class EchoAppState extends ChangeNotifier {
         .whereType<Map<Object?, Object?>>()
         .map((item) => MediaItem.fromJson(item.cast<String, Object?>()))
         .where((item) => item.id.isNotEmpty && item.path.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  List<MediaItem> _dropRemovedSeedItems(List<MediaItem> items) {
+    return items
+        .where((item) => !removedSeedMediaIds.contains(item.id))
+        .toList(growable: false);
+  }
+
+  Set<String> _mediaIdsFor(List<MediaItem> items) {
+    return items.map((item) => item.id).toSet();
+  }
+
+  List<Playlist> _dropRemovedSeedPlaylists(
+    List<Playlist> playlists,
+    Set<String> validMediaIds,
+  ) {
+    return playlists
+        .where((playlist) => !removedSeedPlaylistIds.contains(playlist.id))
+        .map(
+          (playlist) => playlist.copyWith(
+            mediaIds: playlist.mediaIds
+                .where(validMediaIds.contains)
+                .toList(growable: false),
+          ),
+        )
         .toList(growable: false);
   }
 
@@ -1079,7 +1381,75 @@ class EchoAppState extends ChangeNotifier {
         next();
       case PlaybackEventType.previous:
         previous();
+      case PlaybackEventType.interruptionBegan:
+        _interruptionController.begin(
+          wasPlaying: _isPlaying,
+          mayResume: event.mayResume,
+        );
+        _pauseFromSystem();
+      case PlaybackEventType.interruptionEnded:
+        if (_interruptionController.end()) {
+          _resumeFromSystem();
+        }
+      case PlaybackEventType.pictureInPictureChanged:
+        _isInPictureInPicture = event.isInPictureInPicture;
+        notifyListeners();
+      case PlaybackEventType.mediaItemChanged:
+        _handleNativeMediaItemChanged(event.mediaId);
+      case PlaybackEventType.nativePlaybackStateChanged:
+        _handleNativePlaybackStateChanged(event.isPlaying);
     }
+  }
+
+  void _handleNativeMediaItemChanged(String? mediaId) {
+    if (mediaId == null || mediaId == _currentItem?.id) {
+      return;
+    }
+    final item = _findItem(mediaId);
+    if (item == null) {
+      return;
+    }
+    final queueIndex = _queueIds.indexOf(mediaId);
+    if (queueIndex >= 0) {
+      final nextQueueIds = List<String>.from(_queueIds)..removeAt(queueIndex);
+      _queueIds = nextQueueIds;
+    }
+    _updateCurrentVideoResumePosition(forceSave: true);
+    _currentItem = item.copyWith(
+      playCount: item.playCount + 1,
+      lastPosition: Duration.zero,
+    );
+    _replaceItem(_currentItem!);
+    _position = Duration.zero;
+    _isPlaying = true;
+    _startPositionTimer();
+    _saveState(
+      partitions: const <AppStoragePartition>{
+        AppStoragePartition.session,
+        AppStoragePartition.library,
+      },
+    );
+    notifyListeners();
+  }
+
+  void _handleNativePlaybackStateChanged(bool isPlaying) {
+    if (_isPlaying == isPlaying) {
+      return;
+    }
+    _isPlaying = isPlaying;
+    if (isPlaying) {
+      _startPositionTimer();
+    } else {
+      _stopPositionTimer();
+      _updateCurrentVideoResumePosition(forceSave: true);
+    }
+    _saveState(
+      partitions: const <AppStoragePartition>{
+        AppStoragePartition.session,
+        AppStoragePartition.library,
+      },
+    );
+    notifyListeners();
   }
 
   void _pauseFromSystem() {
@@ -1089,7 +1459,12 @@ class EchoAppState extends ChangeNotifier {
     _isPlaying = false;
     _stopPositionTimer();
     _updateCurrentVideoResumePosition(forceSave: true);
-    _saveState();
+    _saveState(
+      partitions: const <AppStoragePartition>{
+        AppStoragePartition.session,
+        AppStoragePartition.library,
+      },
+    );
     notifyListeners();
   }
 
@@ -1122,7 +1497,12 @@ class EchoAppState extends ChangeNotifier {
       _position = current.duration;
       _isPlaying = false;
       _stopPositionTimer();
-      _saveState();
+      _saveState(
+        partitions: const <AppStoragePartition>{
+          AppStoragePartition.session,
+          AppStoragePartition.library,
+        },
+      );
       notifyListeners();
       return;
     }
@@ -1197,7 +1577,12 @@ class EchoAppState extends ChangeNotifier {
       }
       _lastResumePositionSaveAt = now;
     }
-    _saveState();
+    _saveState(
+      partitions: const <AppStoragePartition>{
+        AppStoragePartition.session,
+        AppStoragePartition.library,
+      },
+    );
   }
 
   void _applyEqualizerPreset() {
@@ -1207,31 +1592,59 @@ class EchoAppState extends ChangeNotifier {
     );
   }
 
-  void _saveState() {
-    _appStorageRepository.save(_snapshotState());
+  void _saveState({
+    Set<AppStoragePartition> partitions = const <AppStoragePartition>{
+      AppStoragePartition.session,
+    },
+  }) {
+    _appStorageRepository.save(
+      _snapshotState(partitions: partitions),
+      partitions: partitions,
+    );
   }
 
-  Map<String, Object?> _snapshotState() {
-    return <String, Object?>{
-      'schemaVersion': 1,
-      'audioItems': _audioItems.map((item) => item.toJson()).toList(),
-      'videoItems': _videoItems.map((item) => item.toJson()).toList(),
-      'playlists': _playlists.map((playlist) => playlist.toJson()).toList(),
-      'queueIds': _queueIds,
-      'settings': _settings.toJson(),
-      'currentItemId': _currentItem?.id,
-      'musicSort': _musicSort.name,
-      'shuffleEnabled': _shuffleEnabled,
-      'repeatMode': _repeatMode.name,
-      'playbackView': _playbackView.name,
-      'positionMs': _position.inMilliseconds,
-      'libraryStatusMessage': _libraryStatusMessage,
-      'backupStatusMessage': _backupStatusMessage,
-      'playbackSpeed': _playbackSpeed,
-      'abLoopStartMs': _abLoopStart?.inMilliseconds,
-      'abLoopEndMs': _abLoopEnd?.inMilliseconds,
-      'savedAtMs': DateTime.now().millisecondsSinceEpoch,
-    };
+  void _savePlaylists() {
+    _saveState(
+      partitions: const <AppStoragePartition>{
+        AppStoragePartition.playlists,
+      },
+    );
+  }
+
+  Map<String, Object?> _snapshotState({
+    Set<AppStoragePartition> partitions = _allStoragePartitions,
+  }) {
+    final snapshot = <String, Object?>{'schemaVersion': 1};
+    if (partitions.contains(AppStoragePartition.library)) {
+      snapshot.addAll(<String, Object?>{
+        'audioItems': _audioItems.map((item) => item.toJson()).toList(),
+        'videoItems': _videoItems.map((item) => item.toJson()).toList(),
+      });
+    }
+    if (partitions.contains(AppStoragePartition.playlists)) {
+      snapshot['playlists'] =
+          _playlists.map((playlist) => playlist.toJson()).toList();
+    }
+    if (partitions.contains(AppStoragePartition.session)) {
+      snapshot.addAll(<String, Object?>{
+        'queueIds': _queueIds,
+        'hiddenMediaIds': _hiddenMediaIds.toList(growable: false),
+        'settings': _settings.toJson(),
+        'currentItemId': _currentItem?.id,
+        'musicSort': _musicSort.name,
+        'shuffleEnabled': _shuffleEnabled,
+        'repeatMode': _repeatMode.name,
+        'playbackView': _playbackView.name,
+        'positionMs': _position.inMilliseconds,
+        'libraryStatusMessage': _libraryStatusMessage,
+        'backupStatusMessage': _backupStatusMessage,
+        'playbackSpeed': _playbackSpeed,
+        'abLoopStartMs': _abLoopStart?.inMilliseconds,
+        'abLoopEndMs': _abLoopEnd?.inMilliseconds,
+        'savedAtMs': DateTime.now().millisecondsSinceEpoch,
+      });
+    }
+    return snapshot;
   }
 
   void _applyScanResult(
@@ -1241,8 +1654,14 @@ class EchoAppState extends ChangeNotifier {
     _lastScanStatus = result.status;
     switch (result.status) {
       case MediaLibraryScanStatus.completed:
-        _audioItems = _mergePersistedMediaMetadata(result.audioItems);
-        _videoItems = _mergePersistedMediaMetadata(result.videoItems);
+        _audioItems = visibleMediaItems(
+          _mergePersistedMediaMetadata(result.audioItems),
+          _hiddenMediaIds,
+        );
+        _videoItems = visibleMediaItems(
+          _mergePersistedMediaMetadata(result.videoItems),
+          _hiddenMediaIds,
+        );
         _currentItem = _audioItems.isNotEmpty
             ? _audioItems.first
             : _videoItems.isNotEmpty
@@ -1250,11 +1669,16 @@ class EchoAppState extends ChangeNotifier {
                 : null;
         _isPlaying = false;
         if (result.hasMedia) {
-          _libraryStatusMessage =
-              '已扫描到 ${_audioItems.length} 首音频、${_videoItems.length} 个视频。';
+          _libraryStatusMessage = result.message.isNotEmpty
+              ? '${result.message} 当前媒体库：${_audioItems.length} 首音频、${_videoItems.length} 个视频。'
+              : '已扫描到 ${_audioItems.length} 首音频、${_videoItems.length} 个视频。';
         } else {
-          _libraryStatusMessage = emptyCompletedMessage;
+          _libraryStatusMessage = result.message.isNotEmpty
+              ? result.message
+              : emptyCompletedMessage;
         }
+      case MediaLibraryScanStatus.cancelled:
+        _libraryStatusMessage = result.message;
       case MediaLibraryScanStatus.permissionDenied:
         _libraryStatusMessage = result.message;
       case MediaLibraryScanStatus.unsupported:
@@ -1401,6 +1825,23 @@ class EchoAppState extends ChangeNotifier {
     return null;
   }
 
+  List<MediaItem> _nativePlaybackQueue(MediaItem current) {
+    final pool =
+        current.kind == MediaKind.video ? _videoItems : _sortedAudioItems();
+    final currentIndex = pool.indexWhere((item) => item.id == current.id);
+    final beforeAndCurrent = currentIndex < 0
+        ? <MediaItem>[current]
+        : pool.take(currentIndex + 1).toList(growable: false);
+    final remaining = currentIndex < 0
+        ? pool
+        : pool.skip(currentIndex + 1).toList(growable: false);
+    return <MediaItem>[
+      ...beforeAndCurrent,
+      ...queueItems.where((item) => item.kind == current.kind),
+      ...remaining,
+    ];
+  }
+
   void _replaceItem(MediaItem updated) {
     if (updated.kind == MediaKind.audio) {
       _audioItems = _audioItems
@@ -1423,7 +1864,6 @@ class EchoAppState extends ChangeNotifier {
     _sleepFadeTimer?.cancel();
     _playbackRepository.setVolumeScale(1.0);
     _playbackEventSubscription.cancel();
-    _playbackRepository.stop();
     super.dispose();
   }
 }

@@ -9,6 +9,11 @@ enum PlaybackEventType {
   toggle,
   next,
   previous,
+  interruptionBegan,
+  interruptionEnded,
+  pictureInPictureChanged,
+  mediaItemChanged,
+  nativePlaybackStateChanged,
 }
 
 class PlaybackEvent {
@@ -17,12 +22,18 @@ class PlaybackEvent {
     this.mediaId,
     this.message = '',
     this.videoTextureId,
+    this.mayResume = false,
+    this.isInPictureInPicture = false,
+    this.isPlaying = false,
   });
 
   final PlaybackEventType type;
   final String? mediaId;
   final String message;
   final int? videoTextureId;
+  final bool mayResume;
+  final bool isInPictureInPicture;
+  final bool isPlaying;
 }
 
 abstract class PlaybackRepository {
@@ -30,7 +41,11 @@ abstract class PlaybackRepository {
 
   int? get videoTextureId;
 
-  Future<void> play(MediaItem item, Duration position);
+  Future<void> play(
+    MediaItem item,
+    Duration position, {
+    List<MediaItem> queue = const <MediaItem>[],
+  });
 
   Future<void> pause();
 
@@ -47,6 +62,12 @@ abstract class PlaybackRepository {
 
   Future<void> setVolumeScale(double scale);
 
+  Future<void> setCrossfadeDuration(Duration duration);
+
+  Future<void> setShuffleEnabled(bool enabled);
+
+  Future<void> setRepeatMode(RepeatMode mode);
+
   Future<void> stop();
 
   Future<Duration> position();
@@ -58,4 +79,6 @@ abstract class PlaybackRepository {
   Future<void> adjustVolume(double delta);
 
   Future<void> share(MediaItem item);
+
+  Future<void> shareMany(List<MediaItem> items);
 }

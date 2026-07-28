@@ -1,37 +1,75 @@
 import 'package:flutter/material.dart';
 
-class EchoTheme {
-  static const Color brandBlue = Color(0xFF2F6BFF);
-  static const Color ink = Color(0xFF111318);
-  static const Color mist = Color(0xFFE9EEF7);
-  static const Color paper = Color(0xFFF7F9FC);
-  static const Color coral = Color(0xFFFF6E68);
-  static const Color teal = Color(0xFF1FC7A6);
-  static const Color night = Color(0xFF0D1016);
+import '../core/models/lumio_settings.dart';
+import '../core/models/media_item.dart';
 
-  static ThemeData light() {
+class LumioTheme {
+  static const Color brandViolet = Color(0xFF9B35FF);
+  static const Color brandBlue = Color(0xFF2A63FF);
+  static const Color brandCyan = Color(0xFF12CDEB);
+  static const Color coral = Color(0xFFFF5068);
+  static const Color audioGold = Color(0xFFFFB000);
+  static const Color audioOrange = Color(0xFFE87500);
+  static const Color videoMint = Color(0xFF18DDBE);
+  static const Color videoTeal = Color(0xFF008F7A);
+  static const Color teal = videoTeal;
+  static const Color ink = Color(0xFF14142A);
+  static const Color mist = Color(0xFFE9EAF8);
+  static const Color paper = Color(0xFFF8F8FE);
+  static const Color night = Color(0xFF07091F);
+
+  static ThemeData light({ThemeAccent accent = ThemeAccent.blue}) {
+    final seedColor = accentColor(accent);
     final scheme = ColorScheme.fromSeed(
-      seedColor: brandBlue,
+      seedColor: seedColor,
       brightness: Brightness.light,
-      primary: brandBlue,
+      primary: seedColor,
       secondary: coral,
-      tertiary: teal,
+      tertiary: brandCyan,
       surface: paper,
     );
     return _theme(scheme);
   }
 
-  static ThemeData dark() {
+  static ThemeData dark({ThemeAccent accent = ThemeAccent.blue}) {
+    final seedColor = darkAccentColor(accent);
     final scheme = ColorScheme.fromSeed(
-      seedColor: brandBlue,
+      seedColor: seedColor,
       brightness: Brightness.dark,
-      primary: const Color(0xFF8DACFF),
-      secondary: const Color(0xFFFF9A94),
-      tertiary: const Color(0xFF77DEC9),
-      surface: const Color(0xFF171B24),
+      primary: seedColor,
+      secondary: const Color(0xFFFF8999),
+      tertiary: const Color(0xFF58DDF0),
+      surface: const Color(0xFF101229),
     );
     return _theme(scheme);
   }
+
+  static Color accentColor(ThemeAccent accent) {
+    return switch (accent) {
+      ThemeAccent.blue => brandBlue,
+      ThemeAccent.coral => coral,
+      ThemeAccent.teal => videoTeal,
+      ThemeAccent.violet => brandViolet,
+    };
+  }
+
+  static Color darkAccentColor(ThemeAccent accent) {
+    return switch (accent) {
+      ThemeAccent.blue => const Color(0xFF8395FF),
+      ThemeAccent.coral => const Color(0xFFFF8999),
+      ThemeAccent.teal => const Color(0xFF57DFC9),
+      ThemeAccent.violet => const Color(0xFFC08CFF),
+    };
+  }
+
+  static Color audioColor(Brightness brightness) =>
+      brightness == Brightness.dark ? audioGold : audioOrange;
+
+  static Color videoColor(Brightness brightness) =>
+      brightness == Brightness.dark ? videoMint : videoTeal;
+
+  static Color mediaColor(MediaKind kind, Brightness brightness) =>
+      kind == MediaKind.audio ? audioColor(brightness) : videoColor(brightness);
 
   static ThemeData _theme(ColorScheme scheme) {
     final base = ThemeData(

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
+import '../../app/theme.dart';
+import '../../core/models/lumio_settings.dart';
 import '../../core/models/media_item.dart';
 import '../search/search_page.dart';
 import '../../shared/widgets/media_tile.dart';
@@ -9,7 +11,7 @@ import '../../shared/widgets/section_header.dart';
 class MusicLibraryPage extends StatefulWidget {
   const MusicLibraryPage({super.key, required this.state});
 
-  final EchoAppState state;
+  final LumioAppState state;
 
   @override
   State<MusicLibraryPage> createState() => _MusicLibraryPageState();
@@ -34,6 +36,8 @@ class _MusicLibraryPageState extends State<MusicLibraryPage>
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
+    final scheme = Theme.of(context).colorScheme;
+    final audioColor = LumioTheme.audioColor(scheme.brightness);
     return Scaffold(
       appBar: AppBar(
         title: const Text('音乐库'),
@@ -52,6 +56,21 @@ class _MusicLibraryPageState extends State<MusicLibraryPage>
             ],
           ),
           IconButton(
+            tooltip: state.settings.musicViewMode == MusicViewMode.list
+                ? '切换为网格'
+                : '切换为列表',
+            onPressed: () => state.setMusicViewMode(
+              state.settings.musicViewMode == MusicViewMode.list
+                  ? MusicViewMode.grid
+                  : MusicViewMode.list,
+            ),
+            icon: Icon(
+              state.settings.musicViewMode == MusicViewMode.list
+                  ? Icons.grid_view_rounded
+                  : Icons.view_list_rounded,
+            ),
+          ),
+          IconButton(
             tooltip: '搜索',
             onPressed: () => _openSearch(context, state),
             icon: const Icon(Icons.search_rounded),
@@ -59,15 +78,21 @@ class _MusicLibraryPageState extends State<MusicLibraryPage>
         ],
         bottom: TabBar(
           controller: _tabController,
+          indicatorColor: audioColor,
+          labelColor: audioColor,
           tabs: const <Widget>[
-            Tab(text: 'Songs'),
-            Tab(text: 'Albums'),
-            Tab(text: 'Artists'),
-            Tab(text: 'Folders'),
+            Tab(text: '歌曲'),
+            Tab(text: '专辑'),
+            Tab(text: '艺术家'),
+            Tab(text: '文件夹'),
           ],
         ),
       ),
       floatingActionButton: FloatingActionButton(
+        backgroundColor: audioColor,
+        foregroundColor: scheme.brightness == Brightness.dark
+            ? LumioTheme.night
+            : Colors.white,
         tooltip: '随机播放当前列表',
         onPressed: state.audioItems.isEmpty
             ? null
@@ -87,7 +112,7 @@ class _MusicLibraryPageState extends State<MusicLibraryPage>
   }
 }
 
-void _openSearch(BuildContext context, EchoAppState state) {
+void _openSearch(BuildContext context, LumioAppState state) {
   Navigator.of(context).push(
     MaterialPageRoute<void>(builder: (_) => SearchPage(state: state)),
   );
@@ -96,7 +121,7 @@ void _openSearch(BuildContext context, EchoAppState state) {
 class _SongsTab extends StatefulWidget {
   const _SongsTab({required this.state});
 
-  final EchoAppState state;
+  final LumioAppState state;
 
   @override
   State<_SongsTab> createState() => _SongsTabState();
@@ -130,6 +155,8 @@ class _SongsTabState extends State<_SongsTab> {
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
+    final scheme = Theme.of(context).colorScheme;
+    final audioColor = LumioTheme.audioColor(scheme.brightness);
     final items = state.audioItems;
     if (items.isEmpty) {
       return const _MusicEmptyState(
@@ -137,39 +164,50 @@ class _SongsTabState extends State<_SongsTab> {
         message: '可以到设置里扫描本机媒体，或检查读取权限。',
       );
     }
+    if (state.settings.musicViewMode == MusicViewMode.grid) {
+      return CustomScrollView(
+        slivers: <Widget>[
+          if (_isSelecting)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              sliver: SliverToBoxAdapter(
+                child: _buildBatchActionBar(context, state, items),
+              ),
+            ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 88),
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 0.83,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final item = items[index];
+                  final selected = _selectedIds.contains(item.id);
+                  return _SongGridCard(
+                    state: state,
+                    item: item,
+                    selected: selected,
+                    isSelecting: _isSelecting,
+                    onToggleSelected: () => _toggleSelected(item.id),
+                  );
+                },
+                childCount: items.length,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 88),
       itemCount: items.length + (_isSelecting ? 1 : 0),
       itemBuilder: (context, index) {
         if (_isSelecting && index == 0) {
-          return _BatchActionBar(
-            selectedCount: _selectedIds.length,
-            onCancel: _clearSelection,
-            onSelectAll: () => _selectAll(items),
-            onAddToQueue: () {
-              state.addManyToQueue(_selectedIds);
-              final count = _selectedIds.length;
-              _clearSelection();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('已将 $count 首加入队列')),
-              );
-            },
-            onAddToPlaylist: () async {
-              final count = _selectedIds.length;
-              final playlistName = await _showPlaylistPicker(
-                context,
-                state,
-                _selectedIds,
-              );
-              if (!context.mounted || playlistName == null) {
-                return;
-              }
-              _clearSelection();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('已将 $count 首加入 $playlistName')),
-              );
-            },
-          );
+          return _buildBatchActionBar(context, state, items);
         }
         final item = items[_isSelecting ? index - 1 : index];
         final selected = _selectedIds.contains(item.id);
@@ -179,10 +217,9 @@ class _SongsTabState extends State<_SongsTab> {
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: selected
-                  ? Theme.of(context)
-                      .colorScheme
-                      .primaryContainer
-                      .withValues(alpha: 0.5)
+                  ? audioColor.withValues(
+                      alpha: scheme.brightness == Brightness.dark ? 0.2 : 0.12,
+                    )
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(8),
             ),
@@ -193,6 +230,7 @@ class _SongsTabState extends State<_SongsTab> {
               trailing: _isSelecting
                   ? Checkbox(
                       value: selected,
+                      activeColor: audioColor,
                       onChanged: (_) => _toggleSelected(item.id),
                     )
                   : _SongMenu(
@@ -206,6 +244,162 @@ class _SongsTabState extends State<_SongsTab> {
       },
     );
   }
+
+  Widget _buildBatchActionBar(
+    BuildContext context,
+    LumioAppState state,
+    List<MediaItem> items,
+  ) {
+    return _BatchActionBar(
+      selectedCount: _selectedIds.length,
+      onCancel: _clearSelection,
+      onSelectAll: () => _selectAll(items),
+      onAddToQueue: () {
+        state.addManyToQueue(_selectedIds);
+        final count = _selectedIds.length;
+        _clearSelection();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已将 $count 首加入队列')),
+        );
+      },
+      onAddToPlaylist: () async {
+        final count = _selectedIds.length;
+        final playlistName = await _showPlaylistPicker(
+          context,
+          state,
+          _selectedIds,
+        );
+        if (!context.mounted || playlistName == null) {
+          return;
+        }
+        _clearSelection();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已将 $count 首加入 $playlistName')),
+        );
+      },
+      onShare: () {
+        final count = _selectedIds.length;
+        state.shareMany(_selectedIds);
+        _clearSelection();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已请求分享 $count 首媒体')),
+        );
+      },
+      onDelete: () async {
+        final ids = _selectedIds.toSet();
+        final confirmed = await _confirmRemoveFromLibrary(context, ids.length);
+        if (!confirmed || !context.mounted) {
+          return;
+        }
+        final result = await state.deleteMediaFiles(ids);
+        if (!context.mounted) {
+          return;
+        }
+        if (result.didChangeFiles) {
+          _clearSelection();
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.message)),
+        );
+      },
+      onMove: () async {
+        final ids = _selectedIds.toSet();
+        final relativePath = await _showFileValueDialog(
+          context,
+          title: '移动媒体',
+          label: '目标目录',
+          hintText: '例如：Music/Lumio',
+          confirmLabel: '移动',
+        );
+        if (relativePath == null || !context.mounted) {
+          return;
+        }
+        final result = await state.moveMediaFiles(ids, relativePath);
+        if (!context.mounted) {
+          return;
+        }
+        if (result.didChangeFiles) {
+          _clearSelection();
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.message)),
+        );
+      },
+    );
+  }
+}
+
+class _SongGridCard extends StatelessWidget {
+  const _SongGridCard({
+    required this.state,
+    required this.item,
+    required this.selected,
+    required this.isSelecting,
+    required this.onToggleSelected,
+  });
+
+  final LumioAppState state;
+  final MediaItem item;
+  final bool selected;
+  final bool isSelecting;
+  final VoidCallback onToggleSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final audioColor = LumioTheme.audioColor(scheme.brightness);
+    return Card(
+      color: selected
+          ? audioColor.withValues(
+              alpha: scheme.brightness == Brightness.dark ? 0.2 : 0.12,
+            )
+          : null,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onLongPress: onToggleSelected,
+        onTap: isSelecting ? onToggleSelected : () => state.play(item),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                  child: Center(child: MediaArtwork(item: item, size: 120))),
+              const SizedBox(height: 8),
+              Text(
+                item.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              Text(
+                item.artist,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: isSelecting
+                    ? Checkbox(
+                        value: selected,
+                        activeColor: audioColor,
+                        onChanged: (_) => onToggleSelected(),
+                      )
+                    : _SongMenu(
+                        state: state,
+                        item: item,
+                        onFavorite: () => state.toggleFavorite(item.id),
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _BatchActionBar extends StatelessWidget {
@@ -215,6 +409,9 @@ class _BatchActionBar extends StatelessWidget {
     required this.onSelectAll,
     required this.onAddToQueue,
     required this.onAddToPlaylist,
+    required this.onShare,
+    required this.onDelete,
+    required this.onMove,
   });
 
   final int selectedCount;
@@ -222,6 +419,9 @@ class _BatchActionBar extends StatelessWidget {
   final VoidCallback onSelectAll;
   final VoidCallback onAddToQueue;
   final VoidCallback onAddToPlaylist;
+  final VoidCallback onShare;
+  final VoidCallback onDelete;
+  final VoidCallback onMove;
 
   @override
   Widget build(BuildContext context) {
@@ -264,6 +464,26 @@ class _BatchActionBar extends StatelessWidget {
             onPressed: onAddToPlaylist,
             icon: const Icon(Icons.playlist_add_rounded),
           ),
+          IconButton(
+            tooltip: '分享',
+            onPressed: onShare,
+            icon: const Icon(Icons.share_rounded),
+          ),
+          PopupMenuButton<String>(
+            tooltip: '文件操作',
+            icon: const Icon(Icons.drive_file_move_rounded),
+            itemBuilder: (context) => const <PopupMenuEntry<String>>[
+              PopupMenuItem(value: 'move', child: Text('移动文件')),
+              PopupMenuItem(value: 'delete', child: Text('从媒体库移除')),
+            ],
+            onSelected: (value) {
+              if (value == 'move') {
+                onMove();
+              } else if (value == 'delete') {
+                onDelete();
+              }
+            },
+          ),
         ],
       ),
     );
@@ -272,7 +492,7 @@ class _BatchActionBar extends StatelessWidget {
 
 Future<String?> _showPlaylistPicker(
   BuildContext context,
-  EchoAppState state,
+  LumioAppState state,
   Iterable<String> mediaIds,
 ) async {
   final ids = mediaIds.toSet();
@@ -358,7 +578,7 @@ class _SongMenu extends StatelessWidget {
     required this.onFavorite,
   });
 
-  final EchoAppState state;
+  final LumioAppState state;
   final MediaItem item;
   final VoidCallback onFavorite;
 
@@ -372,6 +592,9 @@ class _SongMenu extends StatelessWidget {
         const PopupMenuItem(value: 'playlist', child: Text('加入播放列表')),
         const PopupMenuItem(value: 'share', child: Text('分享')),
         const PopupMenuItem(value: 'edit', child: Text('编辑信息')),
+        const PopupMenuItem(value: 'renameFile', child: Text('重命名文件')),
+        const PopupMenuItem(value: 'moveFile', child: Text('移动文件')),
+        const PopupMenuItem(value: 'deleteFile', child: Text('从媒体库移除')),
         PopupMenuItem(
           value: 'favorite',
           child: Text(item.isFavorite ? '取消收藏' : '收藏'),
@@ -393,6 +616,12 @@ class _SongMenu extends StatelessWidget {
             state.share(item);
           case 'edit':
             _showMetadataDialog(context, state, item);
+          case 'renameFile':
+            _renameFile(context);
+          case 'moveFile':
+            _moveFile(context);
+          case 'deleteFile':
+            _deleteFile(context);
           case 'detail':
             _showMediaDetail(context);
         }
@@ -429,6 +658,120 @@ class _SongMenu extends StatelessWidget {
       ),
     );
   }
+
+  Future<void> _renameFile(BuildContext context) async {
+    final currentName = item.path.split('/').last;
+    final displayName = await _showFileValueDialog(
+      context,
+      title: '重命名文件',
+      label: '完整文件名',
+      initialValue: currentName,
+      confirmLabel: '重命名',
+    );
+    if (displayName == null || !context.mounted) {
+      return;
+    }
+    final result = await state.renameMediaFile(item.id, displayName);
+    if (!context.mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result.message)),
+    );
+  }
+
+  Future<void> _moveFile(BuildContext context) async {
+    final relativePath = await _showFileValueDialog(
+      context,
+      title: '移动文件',
+      label: '目标目录',
+      hintText: '例如：Music/Lumio',
+      confirmLabel: '移动',
+    );
+    if (relativePath == null || !context.mounted) {
+      return;
+    }
+    final result = await state.moveMediaFiles(<String>[item.id], relativePath);
+    if (!context.mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result.message)),
+    );
+  }
+
+  Future<void> _deleteFile(BuildContext context) async {
+    if (!await _confirmRemoveFromLibrary(context, 1) || !context.mounted) {
+      return;
+    }
+    final result = await state.deleteMediaFiles(<String>[item.id]);
+    if (!context.mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result.message)),
+    );
+  }
+}
+
+Future<bool> _confirmRemoveFromLibrary(BuildContext context, int count) async {
+  return await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('从媒体库移除'),
+          content: Text(
+            '将从忆光当前媒体库移除 $count 个媒体，设备源文件不会被删除。之后可在设置中恢复。',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('确认移除'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+}
+
+Future<String?> _showFileValueDialog(
+  BuildContext context, {
+  required String title,
+  required String label,
+  required String confirmLabel,
+  String initialValue = '',
+  String? hintText,
+}) async {
+  final controller = TextEditingController(text: initialValue);
+  final value = await showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        decoration: InputDecoration(labelText: label, hintText: hintText),
+        textInputAction: TextInputAction.done,
+        onSubmitted: (value) => Navigator.of(context).pop(value),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(controller.text),
+          child: Text(confirmLabel),
+        ),
+      ],
+    ),
+  );
+  controller.dispose();
+  final trimmed = value?.trim();
+  return trimmed == null || trimmed.isEmpty ? null : trimmed;
 }
 
 String _mediaDetailText(MediaItem item) {
@@ -457,7 +800,7 @@ String _mediaDetailText(MediaItem item) {
 
 Future<void> _showMetadataDialog(
   BuildContext context,
-  EchoAppState state,
+  LumioAppState state,
   MediaItem item,
 ) async {
   final titleController = TextEditingController(text: item.title);
@@ -508,19 +851,38 @@ Future<void> _showMetadataDialog(
   artistController.dispose();
   albumController.dispose();
   if (saved == true) {
-    state.updateMediaMetadata(
-      item.id,
-      title: title,
-      artist: artist,
-      album: album,
-    );
+    if (item.path.toLowerCase().endsWith('.mp3')) {
+      final result = await state.writeMediaTags(
+        item.id,
+        title: title,
+        artist: artist,
+        album: album,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.message)),
+        );
+      }
+    } else {
+      state.updateMediaMetadata(
+        item.id,
+        title: title,
+        artist: artist,
+        album: album,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('当前格式暂只修改忆光列表信息；源文件写回优先支持 MP3。')),
+        );
+      }
+    }
   }
 }
 
 class _AlbumGrid extends StatelessWidget {
   const _AlbumGrid({required this.state});
 
-  final EchoAppState state;
+  final LumioAppState state;
 
   @override
   Widget build(BuildContext context) {
@@ -556,7 +918,7 @@ class _AlbumGrid extends StatelessWidget {
 class _ArtistGrid extends StatelessWidget {
   const _ArtistGrid({required this.state});
 
-  final EchoAppState state;
+  final LumioAppState state;
 
   @override
   Widget build(BuildContext context) {
@@ -569,7 +931,7 @@ class _ArtistGrid extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
       children: <Widget>[
-        const SectionHeader(title: 'Artists'),
+        const SectionHeader(title: '艺术家'),
         Wrap(
           spacing: 12,
           runSpacing: 12,
@@ -594,7 +956,7 @@ class _ArtistGrid extends StatelessWidget {
 class _AudioFolderList extends StatelessWidget {
   const _AudioFolderList({required this.state});
 
-  final EchoAppState state;
+  final LumioAppState state;
 
   @override
   Widget build(BuildContext context) {
@@ -626,7 +988,7 @@ class _AudioFolderTile extends StatelessWidget {
 
   final String folder;
   final List<MediaItem> items;
-  final EchoAppState state;
+  final LumioAppState state;
 
   @override
   Widget build(BuildContext context) {
@@ -684,6 +1046,7 @@ class _MusicEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final audioColor = LumioTheme.audioColor(scheme.brightness);
     final textTheme = Theme.of(context).textTheme;
     return Center(
       child: Padding(
@@ -691,7 +1054,7 @@ class _MusicEmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(Icons.library_music_outlined, color: scheme.primary, size: 46),
+            Icon(Icons.library_music_outlined, color: audioColor, size: 46),
             const SizedBox(height: 12),
             Text(title, style: textTheme.titleMedium),
             const SizedBox(height: 6),

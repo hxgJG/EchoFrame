@@ -2,15 +2,19 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "module description"
+      "value": "忆光本地音视频播放器"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "description"
+      "value": "忆光本地音视频播放器"
     },
     {
       "name": "EntryAbility_label",
-      "value": "Lumio"
+      "value": "忆光"
+    },
+    {
+      "name": "permission_read_media_reason",
+      "value": "Used to play local audio and video files on this device."
     }
   ]
 }

@@ -7,11 +7,11 @@
         "material": {
           "certpath": "/Users/hexuegang/.ohos/config/default_ohos_IDdmSGjsBxHg-ziwZAMe21L5ZlPdJ_klOJAgXpxdU8E=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001A22EC0013757424EB5144CE5553F2D80D0EEB07C8D68A8CD1BD14D29E7EF8468DA37F5AE89FBD",
+          "keyPassword": "0000001AC4E8E27E32C6BF37D841AC6AB33C714825E2388C5D4526CDBC2487C53B8C449F440E51BED398",
           "profile": "/Users/hexuegang/.ohos/config/default_ohos_IDdmSGjsBxHg-ziwZAMe21L5ZlPdJ_klOJAgXpxdU8E=.p7b",
           "signAlg": "SHA256withECDSA",
           "storeFile": "/Users/hexuegang/.ohos/config/default_ohos_IDdmSGjsBxHg-ziwZAMe21L5ZlPdJ_klOJAgXpxdU8E=.p12",
-          "storePassword": "0000001A40110DD7F0DAC890C9A2E21B9808DCC40F221D812BB6584266C0C8AE9AC99CFDE9EF88941277"
+          "storePassword": "0000001AC44D15546896F18C9F644C52E74717B29BDF367D39BBB1D5324BDDACCE19378B6B429581726A"
         }
       }
     ],
@@ -21,7 +21,7 @@
         "signingConfig": "default",
         "compatibleSdkVersion": "5.0.0(12)",
         "runtimeOS": "HarmonyOS",
-        "targetSdkVersion": ""
+        "targetSdkVersion": "5.0.0(12)"
       }
     ]
   },
