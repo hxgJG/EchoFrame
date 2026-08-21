@@ -22,7 +22,10 @@ class PlatformPlaybackRepository implements PlaybackRepository {
       StreamController<PlaybackEvent>.broadcast();
   int? _videoTextureId;
 
-  static bool get _isSupportedPlatform => Platform.isAndroid || Platform.isOhos;
+  static bool get _isSupportedPlatform =>
+      Platform.isAndroid ||
+      Platform.isMacOS ||
+      Platform.operatingSystem == 'ohos';
 
   @override
   Stream<PlaybackEvent> get events => _events.stream;

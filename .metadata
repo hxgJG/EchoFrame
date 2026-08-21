@@ -24,6 +24,9 @@ migration:
     - platform: ohos
       create_revision: 2d2e89326c0944c4ab9e1bf2996f6b05a7dbf618
       base_revision: 2d2e89326c0944c4ab9e1bf2996f6b05a7dbf618
+    - platform: macos
+      create_revision: f26915c17e24ba97c30bdf461852f51e92254401
+      base_revision: f26915c17e24ba97c30bdf461852f51e92254401
 
   # User provided section
 

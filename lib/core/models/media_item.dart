@@ -77,6 +77,9 @@ class MediaItem {
     this.fileSizeLabel,
     this.formatLabel,
     this.artworkPath,
+    this.sourceId,
+    this.relativePath,
+    this.availability = 'available',
   });
 
   factory MediaItem.fromJson(Map<String, Object?> json) {
@@ -120,6 +123,9 @@ class MediaItem {
       fileSizeLabel: _nullableString(json['fileSizeLabel']),
       formatLabel: _nullableString(json['formatLabel']),
       artworkPath: _nullableString(json['artworkPath']),
+      sourceId: _nullableString(json['sourceId']),
+      relativePath: _nullableString(json['relativePath']),
+      availability: json['availability']?.toString() ?? 'available',
     );
   }
 
@@ -143,6 +149,9 @@ class MediaItem {
   final String? fileSizeLabel;
   final String? formatLabel;
   final String? artworkPath;
+  final String? sourceId;
+  final String? relativePath;
+  final String availability;
 
   String get subtitle {
     if (kind == MediaKind.video) {
@@ -181,6 +190,9 @@ class MediaItem {
     String? fileSizeLabel,
     String? formatLabel,
     String? artworkPath,
+    String? sourceId,
+    String? relativePath,
+    String? availability,
   }) {
     return MediaItem(
       id: id ?? this.id,
@@ -203,6 +215,9 @@ class MediaItem {
       fileSizeLabel: fileSizeLabel ?? this.fileSizeLabel,
       formatLabel: formatLabel ?? this.formatLabel,
       artworkPath: artworkPath ?? this.artworkPath,
+      sourceId: sourceId ?? this.sourceId,
+      relativePath: relativePath ?? this.relativePath,
+      availability: availability ?? this.availability,
     );
   }
 
@@ -228,6 +243,9 @@ class MediaItem {
       'fileSizeLabel': fileSizeLabel,
       'formatLabel': formatLabel,
       'artworkPath': artworkPath,
+      'sourceId': sourceId,
+      'relativePath': relativePath,
+      'availability': availability,
     };
   }
 }

@@ -16,7 +16,63 @@ class PlatformMediaLibraryRepository implements MediaLibraryRepository {
 
   final MethodChannel _channel;
 
-  bool get _isSupportedPlatform => Platform.isAndroid || Platform.isOhos;
+  bool get _isSupportedPlatform =>
+      Platform.isAndroid ||
+      Platform.isMacOS ||
+      Platform.operatingSystem == 'ohos';
+
+  @override
+  Future<List<MediaSource>> addSources() async {
+    if (!Platform.isMacOS) {
+      return const <MediaSource>[];
+    }
+    try {
+      final raw = await _channel.invokeListMethod<Object?>('addSources');
+      return _parseSources(raw);
+    } on PlatformException {
+      return const <MediaSource>[];
+    } on MissingPluginException {
+      return const <MediaSource>[];
+    }
+  }
+
+  @override
+  Future<List<MediaSource>> listSources() async {
+    if (!Platform.isMacOS) {
+      return const <MediaSource>[];
+    }
+    try {
+      final raw = await _channel.invokeListMethod<Object?>('listSources');
+      return _parseSources(raw);
+    } on PlatformException {
+      return const <MediaSource>[];
+    } on MissingPluginException {
+      return const <MediaSource>[];
+    }
+  }
+
+  @override
+  Future<void> removeSource(String sourceId) async {
+    if (!Platform.isMacOS) {
+      return;
+    }
+    await _channel.invokeMethod<void>(
+      'removeSource',
+      <String, Object?>{'sourceId': sourceId},
+    );
+  }
+
+  @override
+  Future<void> cancelScan() async {
+    if (!_isSupportedPlatform) {
+      return;
+    }
+    try {
+      await _channel.invokeMethod<void>('cancelScan');
+    } on MissingPluginException {
+      return;
+    }
+  }
 
   @override
   Future<MediaLibraryScanResult> scan(MediaLibraryScanFilter filter) async {
@@ -120,7 +176,7 @@ class PlatformMediaLibraryRepository implements MediaLibraryRepository {
   Future<MediaFileOperationResult> performFileOperation(
     MediaFileOperationRequest request,
   ) async {
-    if (!Platform.isAndroid) {
+    if (!Platform.isAndroid && !Platform.isMacOS) {
       return const MediaFileOperationResult(
         status: MediaFileOperationStatus.unsupported,
         message: '当前平台暂未接入真实媒体文件操作。',
@@ -151,6 +207,14 @@ class PlatformMediaLibraryRepository implements MediaLibraryRepository {
         message: '当前平台尚未注册真实媒体文件操作。',
       );
     }
+  }
+
+  List<MediaSource> _parseSources(List<Object?>? value) {
+    return (value ?? const <Object?>[])
+        .whereType<Map<Object?, Object?>>()
+        .map(MediaSource.fromJson)
+        .where((source) => source.id.isNotEmpty)
+        .toList(growable: false);
   }
 
   List<MediaItem> _parseItems(Object? value, MediaKind fallbackKind) {
@@ -198,6 +262,9 @@ class PlatformMediaLibraryRepository implements MediaLibraryRepository {
       fileSizeBytes: sizeBytes,
       fileSizeLabel: sizeBytes > 0 ? _formatSize(sizeBytes) : null,
       formatLabel: item['format']?.toString(),
+      sourceId: item['sourceId']?.toString(),
+      relativePath: item['relativePath']?.toString(),
+      availability: item['availability']?.toString() ?? 'available',
       lyrics: parseLrc(item['lyricsText']?.toString() ?? ''),
       subtitles: kind == MediaKind.video
           ? _parseSubtitles(

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -424,30 +426,90 @@ class _FullscreenVideoPage extends StatefulWidget {
 }
 
 class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
+  static const Duration _controlsHideDelay = Duration(seconds: 3);
+
   double _horizontalDrag = 0;
   double _verticalDrag = 0;
   bool _verticalDragStartedOnLeft = true;
+  bool _controlsVisible = true;
+  late bool _lastIsPlaying;
+  Timer? _controlsHideTimer;
 
   @override
   void initState() {
     super.initState();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    SystemChrome.setPreferredOrientations(const <DeviceOrientation>[
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    _lastIsPlaying = widget.state.isPlaying;
+    widget.state.addListener(_handlePlaybackStateChanged);
+    if (_lastIsPlaying) {
+      _scheduleControlsHide();
+    }
+    if (widget.state.platformCapabilities.supportsBrightnessAdjustment) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      SystemChrome.setPreferredOrientations(const <DeviceOrientation>[
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    }
   }
 
   @override
   void dispose() {
-    SystemChrome.setPreferredOrientations(const <DeviceOrientation>[
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    _controlsHideTimer?.cancel();
+    widget.state.removeListener(_handlePlaybackStateChanged);
+    if (widget.state.platformCapabilities.supportsBrightnessAdjustment) {
+      SystemChrome.setPreferredOrientations(const <DeviceOrientation>[
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
     super.dispose();
+  }
+
+  void _handlePlaybackStateChanged() {
+    final isPlaying = widget.state.isPlaying;
+    if (_lastIsPlaying == isPlaying) {
+      return;
+    }
+    _lastIsPlaying = isPlaying;
+    if (isPlaying) {
+      _showControls();
+    } else {
+      _showControls(scheduleHide: false);
+    }
+  }
+
+  void _scheduleControlsHide() {
+    _controlsHideTimer?.cancel();
+    if (!widget.state.isPlaying) {
+      return;
+    }
+    _controlsHideTimer = Timer(_controlsHideDelay, () {
+      if (!mounted || !widget.state.isPlaying) {
+        return;
+      }
+      setState(() => _controlsVisible = false);
+    });
+  }
+
+  void _showControls({bool scheduleHide = true}) {
+    _controlsHideTimer?.cancel();
+    if (mounted && !_controlsVisible) {
+      setState(() => _controlsVisible = true);
+    }
+    if (scheduleHide) {
+      _scheduleControlsHide();
+    }
+  }
+
+  void _toggleControls() {
+    _controlsHideTimer?.cancel();
+    setState(() => _controlsVisible = !_controlsVisible);
+    if (_controlsVisible) {
+      _scheduleControlsHide();
+    }
   }
 
   @override
@@ -458,95 +520,131 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onHorizontalDragUpdate: (details) {
-            _horizontalDrag += details.primaryDelta ?? 0;
-          },
-          onHorizontalDragEnd: (_) {
-            final media = state.currentItem;
-            if (media != null && _horizontalDrag.abs() >= 24) {
-              final deltaMs = _horizontalDrag * 45;
-              final nextPosition =
-                  state.position + Duration(milliseconds: deltaMs.round());
-              state.seekToFraction(
-                media.duration.inMilliseconds == 0
-                    ? 0
-                    : nextPosition.inMilliseconds /
-                        media.duration.inMilliseconds,
-              );
-            }
-            _horizontalDrag = 0;
-          },
-          onVerticalDragStart: (details) {
-            _verticalDragStartedOnLeft =
-                details.localPosition.dx < MediaQuery.sizeOf(context).width / 2;
-            _verticalDrag = 0;
-          },
-          onVerticalDragUpdate: (details) {
-            _verticalDrag += details.primaryDelta ?? 0;
-            if (_verticalDrag.abs() < 20) {
-              return;
-            }
-            final delta = -_verticalDrag / 600;
-            if (_verticalDragStartedOnLeft) {
-              state.adjustBrightness(delta);
-            } else {
-              state.adjustVolume(delta);
-            }
-            _verticalDrag = 0;
-          },
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              if (textureId == null)
-                const Center(
-                  child: Icon(
-                    Icons.play_circle_fill_rounded,
-                    color: Colors.white70,
-                    size: 80,
+        child: MouseRegion(
+          onHover: (_) => _showControls(),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _toggleControls,
+            onHorizontalDragStart: (_) => _showControls(scheduleHide: false),
+            onHorizontalDragUpdate: (details) {
+              _horizontalDrag += details.primaryDelta ?? 0;
+            },
+            onHorizontalDragEnd: (_) {
+              final media = state.currentItem;
+              if (media != null && _horizontalDrag.abs() >= 24) {
+                final deltaMs = _horizontalDrag * 45;
+                final nextPosition =
+                    state.position + Duration(milliseconds: deltaMs.round());
+                state.seekToFraction(
+                  media.duration.inMilliseconds == 0
+                      ? 0
+                      : nextPosition.inMilliseconds /
+                          media.duration.inMilliseconds,
+                );
+              }
+              _horizontalDrag = 0;
+              _scheduleControlsHide();
+            },
+            onVerticalDragStart:
+                state.platformCapabilities.supportsBrightnessAdjustment
+                    ? (details) {
+                        _verticalDragStartedOnLeft = details.localPosition.dx <
+                            MediaQuery.sizeOf(context).width / 2;
+                        _verticalDrag = 0;
+                      }
+                    : null,
+            onVerticalDragUpdate:
+                state.platformCapabilities.supportsBrightnessAdjustment
+                    ? (details) {
+                        _verticalDrag += details.primaryDelta ?? 0;
+                        if (_verticalDrag.abs() < 20) {
+                          return;
+                        }
+                        final delta = -_verticalDrag / 600;
+                        if (_verticalDragStartedOnLeft) {
+                          state.adjustBrightness(delta);
+                        } else {
+                          state.adjustVolume(delta);
+                        }
+                        _verticalDrag = 0;
+                      }
+                    : null,
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                if (textureId == null)
+                  const Center(
+                    child: Icon(
+                      Icons.play_circle_fill_rounded,
+                      color: Colors.white70,
+                      size: 80,
+                    ),
+                  )
+                else
+                  _VideoTextureView(
+                    textureId: textureId,
+                    scaleMode: state.settings.videoScaleMode,
+                    aspectRatio: _videoAspectRatio(item),
                   ),
-                )
-              else
-                _VideoTextureView(
-                  textureId: textureId,
-                  scaleMode: state.settings.videoScaleMode,
-                  aspectRatio: _videoAspectRatio(item),
-                ),
-              if (state.currentSubtitleText.isNotEmpty)
+                if (state.currentSubtitleText.isNotEmpty)
+                  Positioned(
+                    left: 24,
+                    right: 24,
+                    bottom: _subtitleBottom(
+                          state.settings.subtitlePosition,
+                          true,
+                        ) -
+                        (_controlsVisible ? 0 : 72),
+                    child: _SubtitleOverlayText(
+                      text: state.currentSubtitleText,
+                      settings: state.settings,
+                    ),
+                  ),
                 Positioned(
-                  left: 24,
-                  right: 24,
-                  bottom: _subtitleBottom(
-                    state.settings.subtitlePosition,
-                    true,
-                  ),
-                  child: _SubtitleOverlayText(
-                    text: state.currentSubtitleText,
-                    settings: state.settings,
-                  ),
-                ),
-              Positioned(
-                left: 8,
-                top: 8,
-                child: IconButton(
-                  tooltip: '退出全屏',
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  icon: const Icon(
-                    Icons.fullscreen_exit_rounded,
-                    color: Colors.white,
+                  left: 8,
+                  top: 8,
+                  child: IgnorePointer(
+                    ignoring: !_controlsVisible,
+                    child: AnimatedOpacity(
+                      opacity: _controlsVisible ? 1 : 0,
+                      duration: const Duration(milliseconds: 180),
+                      child: IconButton(
+                        tooltip: '退出全屏',
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        icon: const Icon(
+                          Icons.fullscreen_exit_rounded,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              Positioned(
-                left: 20,
-                right: 20,
-                bottom: 18,
-                child: item == null
-                    ? const SizedBox.shrink()
-                    : _FullscreenControlBar(state: state, item: item),
-              ),
-            ],
+                Positioned(
+                  left: 20,
+                  right: 20,
+                  bottom: 18,
+                  child: IgnorePointer(
+                    ignoring: !_controlsVisible,
+                    child: AnimatedOpacity(
+                      opacity: _controlsVisible ? 1 : 0,
+                      duration: const Duration(milliseconds: 180),
+                      child: MouseRegion(
+                        onEnter: (_) => _showControls(scheduleHide: false),
+                        onExit: (_) => _showControls(),
+                        child: Listener(
+                          onPointerDown: (_) =>
+                              _showControls(scheduleHide: false),
+                          onPointerUp: (_) => _scheduleControlsHide(),
+                          child: item == null
+                              ? const SizedBox.shrink()
+                              : _FullscreenControlBar(state: state, item: item),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -884,17 +982,19 @@ class _ToolRow extends StatelessWidget {
           onPressed: () => Navigator.of(context).maybePop(),
           icon: const Icon(Icons.keyboard_arrow_down_rounded),
         ),
-        IconButton(
-          tooltip: isVideo ? '小窗播放' : '封面/歌词',
-          onPressed:
-              isVideo ? state.enterPictureInPicture : state.togglePlaybackView,
-          icon: Icon(
-            isVideo
-                ? Icons.picture_in_picture_alt_rounded
-                : Icons.lyrics_rounded,
-            color: mediaColor,
+        if (!isVideo || state.platformCapabilities.supportsPictureInPicture)
+          IconButton(
+            tooltip: isVideo ? '小窗播放' : '封面/歌词',
+            onPressed: isVideo
+                ? state.enterPictureInPicture
+                : state.togglePlaybackView,
+            icon: Icon(
+              isVideo
+                  ? Icons.picture_in_picture_alt_rounded
+                  : Icons.lyrics_rounded,
+              color: mediaColor,
+            ),
           ),
-        ),
         IconButton(
           tooltip: item.isFavorite ? '取消收藏' : '收藏',
           onPressed: () => state.toggleFavorite(item.id),

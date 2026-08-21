@@ -1,12 +1,12 @@
 # 忆光 Lumio 功能状态矩阵
 
 > 基线：`docs/Lumio_PRD_v0.5.md` v0.5
-> 核对日期：2026-07-27
+> 核对日期：2026-08-03
 > 状态口径：✅ 已完成；🟡 部分完成；⬜ 未实现；⏸ 待确认或依赖外部条件
 
 ## 1. 当前结论
 
-当前产品处于“Android 本地播放可用版本 + HarmonyOS 可构建 spike”阶段。
+当前产品处于“Android 本地播放可用版本 + HarmonyOS 可构建 spike + macOS 核心主链路实施”阶段。
 Android 的媒体浏览、播放列表、音视频播放、搜索、续播、本地歌词/字幕、播放速度、
 睡眠定时器、AB 循环、均衡器、自动 PiP、封面/首帧懒加载和批量分享等主链路已经可用。
 应用状态已按会话、媒体库、播放列表分区持久化，Android 使用 MMKV，HarmonyOS 使用系统
@@ -43,6 +43,10 @@ Preferences，避免数据库和高频完整媒体库写入。iOS 仍是工程�
 | 多语言 | 中文/英文切换 | ⬜ | 当前界面文本以中文硬编码 | 引入 Flutter l10n 并迁移文案 |
 | 无障碍 | 字体缩放、TalkBack 基本可用 | 🟡 | 大量使用标准 Material 控件 | 补语义标签并做 TalkBack/大字体验收 |
 | iOS | 导入、索引、音视频、后台、PiP | ⬜ | 仅 Flutter/iOS 工程骨架 | 完整平台实现 |
+| macOS 工程 | Runner、Sandbox、Debug/Release、universal | ✅ | macOS 13 Runner 已生成；Debug 构建和 universal Release 产物已验证，Release/Profile 启用 Hardened Runtime | 配置 Developer ID 后完成 Archive、公证和 Gatekeeper 验收 |
+| macOS 媒体库 | 文件夹授权、持久来源、扫描、元数据、封面、歌词/字幕 | 🟡 | NSOpenPanel、security-scoped bookmark、来源管理、AVAsset 扫描和快照已接入 | 真实媒体矩阵、跨重启授权和千级媒体性能验收 |
+| macOS 播放 | AVPlayer、Texture、系统媒体控制、分享 | 🟡 | 音视频播放桥接、FlutterTexture、Now Playing/Remote Command 和分享已接入 | 真媒体长播、seek/切换、视频缩放和媒体键验收 |
+| macOS 桌面体验 | 侧栏、菜单、快捷键、能力降级 | 🟡 | 宽屏媒体架、紧凑底栏回退、原生菜单、快捷键和平台能力模型已接入 | Now Playing 双栏、右键、多选和完整窗口尺寸矩阵 |
 | HarmonyOS | 导入、音视频、后台、持久化 | 🟡 | Picker、AVMetadataExtractor、AVPlayer、Texture、分区 Preferences 已接入；签名 HAP 构建、真机启动和首页渲染通过 | 完整播放回归、后台/锁屏、封面和平台操作 |
 | HarmonyOS PiP | 小窗播放 | ⏸ | PRD 允许首发不支持 | 后续单独排期 |
 
@@ -100,7 +104,7 @@ Preferences，避免数据库和高频完整媒体库写入。iOS 仍是工程�
 
 ## 7. 验证口径
 
-- 所有新增纯 Dart 行为先写失败测试，再做最小实现。
+- 测试策略按改动风险和项目实际决定；前端改动默认不新增单元测试。
 - 不新增 Widget 单元测试，遵循项目全局约定。
 - 每批完成后执行 `dart format`、`flutter test` 和 `flutter analyze`。
 - 最终执行 Android debug APK 和签名 HarmonyOS debug HAP 构建；真机验证受设备状态阻塞时记录原始问题。

@@ -16,6 +16,7 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final capabilities = state.platformCapabilities;
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
       body: ListView(
@@ -234,13 +235,16 @@ class SettingsPage extends StatelessWidget {
               SwitchListTile(
                 secondary: const Icon(Icons.compare_arrows_rounded),
                 title: const Text('交叉淡入淡出'),
-                subtitle: Text(
-                  state.settings.crossfadeEnabled
-                      ? '切歌时重叠渐变 3 秒'
-                      : '默认关闭；开启后使用 3 秒',
-                ),
-                value: state.settings.crossfadeEnabled,
-                onChanged: state.toggleCrossfade,
+                subtitle: Text(capabilities.supportsCrossfade
+                    ? (state.settings.crossfadeEnabled
+                        ? '切歌时重叠渐变 3 秒'
+                        : '默认关闭；开启后使用 3 秒')
+                    : '当前平台首版暂不支持'),
+                value: capabilities.supportsCrossfade &&
+                    state.settings.crossfadeEnabled,
+                onChanged: capabilities.supportsCrossfade
+                    ? state.toggleCrossfade
+                    : null,
               ),
               ListTile(
                 leading: const Icon(Icons.speed_rounded),
@@ -294,11 +298,13 @@ class SettingsPage extends StatelessWidget {
                   selected: <EqualizerPreset>{
                     state.settings.equalizerPreset,
                   },
-                  onSelectionChanged: (value) =>
-                      state.setEqualizerPreset(value.first),
+                  onSelectionChanged: capabilities.supportsEqualizer
+                      ? (value) => state.setEqualizerPreset(value.first)
+                      : null,
                 ),
               ),
-              if (state.settings.equalizerPreset == EqualizerPreset.custom)
+              if (capabilities.supportsEqualizer &&
+                  state.settings.equalizerPreset == EqualizerPreset.custom)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                   child: Column(
@@ -403,6 +409,53 @@ class SettingsPage extends StatelessWidget {
           const SectionHeader(title: '媒体库'),
           _SettingsCard(
             children: <Widget>[
+              if (capabilities.supportsFolderPicker) ...<Widget>[
+                ListTile(
+                  leading: const Icon(Icons.create_new_folder_rounded),
+                  title: const Text('媒体来源'),
+                  subtitle: Text(state.mediaSources.isEmpty
+                      ? '添加音乐或视频所在的文件夹'
+                      : '已授权 ${state.mediaSources.length} 个文件夹'),
+                  trailing: FilledButton.icon(
+                    onPressed: state.isUpdatingMediaSources
+                        ? null
+                        : state.addMediaSources,
+                    icon: state.isUpdatingMediaSources
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.add_rounded),
+                    label: const Text('添加'),
+                  ),
+                ),
+                for (final source in state.mediaSources)
+                  ListTile(
+                    contentPadding: const EdgeInsets.only(left: 48, right: 12),
+                    leading: Icon(
+                      source.isAvailable
+                          ? Icons.folder_rounded
+                          : Icons.folder_off_rounded,
+                      color: source.isAvailable ? scheme.primary : scheme.error,
+                    ),
+                    title: Text(source.displayName),
+                    subtitle: Text(
+                      source.isAvailable
+                          ? source.resolvedPath
+                          : '授权已失效，请移除后重新添加',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: IconButton(
+                      tooltip: '移除来源（不删除文件）',
+                      onPressed: state.isUpdatingMediaSources
+                          ? null
+                          : () => state.removeMediaSource(source),
+                      icon: const Icon(Icons.remove_circle_outline_rounded),
+                    ),
+                  ),
+              ],
               ListTile(
                 leading: state.isScanningLibrary
                     ? const SizedBox(
@@ -413,15 +466,17 @@ class SettingsPage extends StatelessWidget {
                     : const Icon(Icons.manage_search_rounded),
                 title: const Text('扫描/导入本机媒体'),
                 subtitle: Text(state.libraryStatusMessage),
-                trailing: FilledButton.icon(
-                  onPressed: state.isScanningLibrary
-                      ? null
-                      : () {
-                          state.scanMediaLibrary();
-                        },
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('开始'),
-                ),
+                trailing: state.isScanningLibrary
+                    ? OutlinedButton.icon(
+                        onPressed: state.cancelMediaLibraryScan,
+                        icon: const Icon(Icons.stop_rounded),
+                        label: const Text('取消'),
+                      )
+                    : FilledButton.icon(
+                        onPressed: state.scanMediaLibrary,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('开始'),
+                      ),
               ),
               ListTile(
                 leading: const Icon(Icons.restore_from_trash_rounded),
@@ -438,21 +493,23 @@ class SettingsPage extends StatelessWidget {
                   child: const Text('恢复'),
                 ),
               ),
-              ListTile(
-                leading: const Icon(Icons.folder_open_rounded),
-                title: const Text('包含文件夹'),
-                subtitle: Text(
-                  state.settings.includedFolders.isEmpty
-                      ? '未设置，扫描全部媒体'
-                      : '${state.settings.includedFolders.length} 个路径',
+              if (!capabilities.supportsFolderPicker)
+                ListTile(
+                  leading: const Icon(Icons.folder_open_rounded),
+                  title: const Text('包含文件夹'),
+                  subtitle: Text(
+                    state.settings.includedFolders.isEmpty
+                        ? '未设置，扫描全部媒体'
+                        : '${state.settings.includedFolders.length} 个路径',
+                  ),
+                  trailing: IconButton(
+                    tooltip: '添加',
+                    onPressed: () => _showAddIncludedFolderDialog(context),
+                    icon: const Icon(Icons.add_rounded),
+                  ),
                 ),
-                trailing: IconButton(
-                  tooltip: '添加',
-                  onPressed: () => _showAddIncludedFolderDialog(context),
-                  icon: const Icon(Icons.add_rounded),
-                ),
-              ),
-              if (state.settings.includedFolders.isNotEmpty)
+              if (!capabilities.supportsFolderPicker &&
+                  state.settings.includedFolders.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                   child: Wrap(
@@ -468,21 +525,23 @@ class SettingsPage extends StatelessWidget {
                         .toList(),
                   ),
                 ),
-              ListTile(
-                leading: const Icon(Icons.folder_off_rounded),
-                title: const Text('排除文件夹'),
-                subtitle: Text(
-                  state.settings.excludedFolders.isEmpty
-                      ? '未设置'
-                      : '${state.settings.excludedFolders.length} 个路径',
+              if (!capabilities.supportsFolderPicker)
+                ListTile(
+                  leading: const Icon(Icons.folder_off_rounded),
+                  title: const Text('排除文件夹'),
+                  subtitle: Text(
+                    state.settings.excludedFolders.isEmpty
+                        ? '未设置'
+                        : '${state.settings.excludedFolders.length} 个路径',
+                  ),
+                  trailing: IconButton(
+                    tooltip: '添加',
+                    onPressed: () => _showAddExcludedFolderDialog(context),
+                    icon: const Icon(Icons.add_rounded),
+                  ),
                 ),
-                trailing: IconButton(
-                  tooltip: '添加',
-                  onPressed: () => _showAddExcludedFolderDialog(context),
-                  icon: const Icon(Icons.add_rounded),
-                ),
-              ),
-              if (state.settings.excludedFolders.isNotEmpty)
+              if (!capabilities.supportsFolderPicker &&
+                  state.settings.excludedFolders.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                   child: Wrap(

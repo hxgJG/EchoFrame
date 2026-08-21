@@ -11,7 +11,10 @@ class PlatformAppStorageRepository implements AppStorageRepository {
 
   final MethodChannel _channel;
 
-  bool get _isSupportedPlatform => Platform.isAndroid || Platform.isOhos;
+  bool get _isSupportedPlatform =>
+      Platform.isAndroid ||
+      Platform.isMacOS ||
+      Platform.operatingSystem == 'ohos';
 
   @override
   Future<Map<String, Object?>?> load() async {

@@ -9,6 +9,34 @@ enum MediaLibraryScanStatus {
   failed,
 }
 
+class MediaSource {
+  const MediaSource({
+    required this.id,
+    required this.displayName,
+    required this.resolvedPath,
+    required this.status,
+    required this.readOnly,
+  });
+
+  factory MediaSource.fromJson(Map<Object?, Object?> json) {
+    return MediaSource(
+      id: json['id']?.toString() ?? '',
+      displayName: json['displayName']?.toString() ?? '媒体文件夹',
+      resolvedPath: json['resolvedPath']?.toString() ?? '',
+      status: json['status']?.toString() ?? 'unavailable',
+      readOnly: json['readOnly'] == true,
+    );
+  }
+
+  final String id;
+  final String displayName;
+  final String resolvedPath;
+  final String status;
+  final bool readOnly;
+
+  bool get isAvailable => status == 'available';
+}
+
 class MediaLibraryScanFilter {
   const MediaLibraryScanFilter({
     this.minimumAudioDuration = const Duration(seconds: 45),
@@ -46,6 +74,14 @@ class MediaLibraryScanResult {
 }
 
 abstract class MediaLibraryRepository {
+  Future<List<MediaSource>> addSources() async => const <MediaSource>[];
+
+  Future<List<MediaSource>> listSources() async => const <MediaSource>[];
+
+  Future<void> removeSource(String sourceId) async {}
+
+  Future<void> cancelScan() async {}
+
   Future<MediaLibraryScanResult> scan(MediaLibraryScanFilter filter);
 
   Future<MediaLibraryScanResult> restoreLastScan();

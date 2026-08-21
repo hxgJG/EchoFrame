@@ -1,4 +1,7 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'app/app_state.dart';
 import 'app/theme.dart';
@@ -43,93 +46,208 @@ class LumioShell extends StatelessWidget {
 
   final LumioAppState state;
 
+  static const List<_LumioDestination> _destinations = <_LumioDestination>[
+    _LumioDestination(
+      section: AppSection.home,
+      label: '首页',
+      icon: Icons.home_outlined,
+      selectedIcon: Icons.home_rounded,
+    ),
+    _LumioDestination(
+      section: AppSection.music,
+      label: '音乐库',
+      icon: Icons.library_music_outlined,
+      selectedIcon: Icons.library_music_rounded,
+    ),
+    _LumioDestination(
+      section: AppSection.playlists,
+      label: '播放列表',
+      icon: Icons.queue_music_outlined,
+      selectedIcon: Icons.queue_music_rounded,
+    ),
+    _LumioDestination(
+      section: AppSection.video,
+      label: '视频',
+      icon: Icons.movie_outlined,
+      selectedIcon: Icons.movie_rounded,
+    ),
+    _LumioDestination(
+      section: AppSection.settings,
+      label: '设置',
+      icon: Icons.tune_rounded,
+      selectedIcon: Icons.tune_rounded,
+    ),
+  ];
+
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final brightness = Theme.of(context).brightness;
-    final navigationColor = switch (state.section) {
-      AppSection.home ||
-      AppSection.music ||
-      AppSection.playlists =>
-        LumioTheme.audioColor(brightness),
-      AppSection.video => LumioTheme.videoColor(brightness),
-      AppSection.settings => scheme.primary,
-    };
-    final page = switch (state.section) {
-      AppSection.home => MusicHomePage(state: state),
-      AppSection.music => MusicLibraryPage(state: state),
-      AppSection.playlists => PlaylistsPage(state: state),
-      AppSection.video => VideoPage(state: state),
-      AppSection.settings => SettingsPage(state: state),
-    };
-
-    return Scaffold(
-      body: SafeArea(bottom: false, child: page),
-      bottomNavigationBar: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          MiniPlayer(state: state, onExpand: () => _openNowPlaying(context)),
-          NavigationBarTheme(
-            data: NavigationBarThemeData(
-              indicatorColor: navigationColor.withValues(
-                alpha: brightness == Brightness.dark ? 0.24 : 0.14,
-              ),
-              iconTheme: WidgetStateProperty.resolveWith(
-                (states) => IconThemeData(
-                  color: states.contains(WidgetState.selected)
-                      ? navigationColor
-                      : scheme.onSurfaceVariant,
-                ),
-              ),
-              labelTextStyle: WidgetStateProperty.resolveWith(
-                (states) => TextStyle(
-                  color: states.contains(WidgetState.selected)
-                      ? navigationColor
-                      : scheme.onSurfaceVariant,
-                  fontSize: 12,
-                  fontWeight: states.contains(WidgetState.selected)
-                      ? FontWeight.w800
-                      : FontWeight.w600,
-                ),
-              ),
+    final shell = CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.digit1, meta: true): () =>
+            state.selectSection(AppSection.home),
+        const SingleActivator(LogicalKeyboardKey.digit2, meta: true): () =>
+            state.selectSection(AppSection.music),
+        const SingleActivator(LogicalKeyboardKey.digit3, meta: true): () =>
+            state.selectSection(AppSection.playlists),
+        const SingleActivator(LogicalKeyboardKey.digit4, meta: true): () =>
+            state.selectSection(AppSection.video),
+        const SingleActivator(LogicalKeyboardKey.comma, meta: true): () =>
+            state.selectSection(AppSection.settings),
+        const SingleActivator(LogicalKeyboardKey.keyO, meta: true):
+            state.addMediaSources,
+        const SingleActivator(LogicalKeyboardKey.keyR, meta: true):
+            state.scanMediaLibrary,
+        const SingleActivator(LogicalKeyboardKey.space): () {
+          if (!_editingText()) {
+            state.togglePlaying();
+          }
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return constraints.maxWidth >= 1000
+                ? _DesktopShell(
+                    state: state,
+                    destinations: _destinations,
+                    onOpenNowPlaying: () => _openNowPlaying(context),
+                  )
+                : _CompactShell(
+                    state: state,
+                    destinations: _destinations,
+                    onOpenNowPlaying: () => _openNowPlaying(context),
+                  );
+          },
+        ),
+      ),
+    );
+    if (!Platform.isMacOS) {
+      return shell;
+    }
+    return PlatformMenuBar(
+      menus: <PlatformMenuItem>[
+        const PlatformMenu(
+          label: 'Lumio',
+          menus: <PlatformMenuItem>[
+            PlatformProvidedMenuItem(
+              type: PlatformProvidedMenuItemType.about,
             ),
-            child: NavigationBar(
-              selectedIndex: state.section.index,
-              onDestinationSelected: (index) {
-                state.selectSection(AppSection.values[index]);
-              },
-              destinations: const <NavigationDestination>[
-                NavigationDestination(
-                  icon: Icon(Icons.home_outlined),
-                  selectedIcon: Icon(Icons.home_rounded),
-                  label: '首页',
+            PlatformProvidedMenuItem(
+              type: PlatformProvidedMenuItemType.servicesSubmenu,
+            ),
+            PlatformMenuItemGroup(
+              members: <PlatformMenuItem>[
+                PlatformProvidedMenuItem(
+                  type: PlatformProvidedMenuItemType.hide,
                 ),
-                NavigationDestination(
-                  icon: Icon(Icons.library_music_outlined),
-                  selectedIcon: Icon(Icons.library_music_rounded),
-                  label: '音乐库',
+                PlatformProvidedMenuItem(
+                  type: PlatformProvidedMenuItemType.hideOtherApplications,
                 ),
-                NavigationDestination(
-                  icon: Icon(Icons.queue_music_outlined),
-                  selectedIcon: Icon(Icons.queue_music_rounded),
-                  label: '列表',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.movie_outlined),
-                  selectedIcon: Icon(Icons.movie_rounded),
-                  label: '视频',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.tune_rounded),
-                  selectedIcon: Icon(Icons.tune_rounded),
-                  label: '设置',
+                PlatformProvidedMenuItem(
+                  type: PlatformProvidedMenuItemType.showAllApplications,
                 ),
               ],
             ),
-          ),
-        ],
-      ),
+            PlatformProvidedMenuItem(
+              type: PlatformProvidedMenuItemType.quit,
+            ),
+          ],
+        ),
+        PlatformMenu(
+          label: '文件',
+          menus: <PlatformMenuItem>[
+            PlatformMenuItem(
+              label: '添加媒体文件夹…',
+              shortcut: const SingleActivator(
+                LogicalKeyboardKey.keyO,
+                meta: true,
+              ),
+              onSelected: state.addMediaSources,
+            ),
+            PlatformMenuItem(
+              label: '重新扫描媒体库',
+              shortcut: const SingleActivator(
+                LogicalKeyboardKey.keyR,
+                meta: true,
+              ),
+              onSelected: state.scanMediaLibrary,
+            ),
+          ],
+        ),
+        PlatformMenu(
+          label: '播放',
+          menus: <PlatformMenuItem>[
+            PlatformMenuItem(
+              label: state.isPlaying ? '暂停' : '播放',
+              onSelected: state.togglePlaying,
+            ),
+            PlatformMenuItem(label: '上一首', onSelected: state.previous),
+            PlatformMenuItem(label: '下一首', onSelected: state.next),
+          ],
+        ),
+        PlatformMenu(
+          label: '前往',
+          menus: <PlatformMenuItem>[
+            for (final destination in _destinations)
+              PlatformMenuItem(
+                label: destination.label,
+                onSelected: () => state.selectSection(destination.section),
+              ),
+          ],
+        ),
+        PlatformMenu(
+          label: '显示',
+          menus: <PlatformMenuItem>[
+            PlatformMenuItem(
+              label: '跟随系统外观',
+              onSelected: () => state.setThemeMode(ThemeMode.system),
+            ),
+            PlatformMenuItem(
+              label: '浅色外观',
+              onSelected: () => state.setThemeMode(ThemeMode.light),
+            ),
+            PlatformMenuItem(
+              label: '深色外观',
+              onSelected: () => state.setThemeMode(ThemeMode.dark),
+            ),
+            const PlatformProvidedMenuItem(
+              type: PlatformProvidedMenuItemType.toggleFullScreen,
+            ),
+          ],
+        ),
+        const PlatformMenu(
+          label: '窗口',
+          menus: <PlatformMenuItem>[
+            PlatformProvidedMenuItem(
+              type: PlatformProvidedMenuItemType.minimizeWindow,
+            ),
+            PlatformProvidedMenuItem(
+              type: PlatformProvidedMenuItemType.zoomWindow,
+            ),
+            PlatformProvidedMenuItem(
+              type: PlatformProvidedMenuItemType.arrangeWindowsInFront,
+            ),
+          ],
+        ),
+        PlatformMenu(
+          label: '帮助',
+          menus: <PlatformMenuItem>[
+            PlatformMenuItem(
+              label: '关于与版本信息',
+              onSelected: () => state.selectSection(AppSection.settings),
+            ),
+          ],
+        ),
+      ],
+      child: shell,
     );
+  }
+
+  bool _editingText() {
+    final context = FocusManager.instance.primaryFocus?.context;
+    return context?.widget is EditableText ||
+        context?.findAncestorWidgetOfExactType<EditableText>() != null;
   }
 
   void _openNowPlaying(BuildContext context) {
@@ -142,4 +260,276 @@ class LumioShell extends StatelessWidget {
       ),
     );
   }
+}
+
+class _DesktopShell extends StatelessWidget {
+  const _DesktopShell({
+    required this.state,
+    required this.destinations,
+    required this.onOpenNowPlaying,
+  });
+
+  final LumioAppState state;
+  final List<_LumioDestination> destinations;
+  final VoidCallback onOpenNowPlaying;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Row(
+        children: <Widget>[
+          _MediaShelf(state: state, destinations: destinations),
+          const VerticalDivider(width: 1),
+          Expanded(
+            child: Column(
+              children: <Widget>[
+                Expanded(
+                  child: SafeArea(bottom: false, child: _pageFor(state)),
+                ),
+                MiniPlayer(state: state, onExpand: onOpenNowPlaying),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MediaShelf extends StatelessWidget {
+  const _MediaShelf({required this.state, required this.destinations});
+
+  final LumioAppState state;
+  final List<_LumioDestination> destinations;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 220,
+      color: scheme.surfaceContainerLowest,
+      child: Stack(
+        children: <Widget>[
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            child: Container(
+              width: 3,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: <Color>[
+                    LumioTheme.brandViolet,
+                    LumioTheme.brandBlue,
+                    LumioTheme.brandCyan,
+                  ],
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 22, 14, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: <Color>[
+                              LumioTheme.brandViolet,
+                              LumioTheme.brandBlue,
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.graphic_eq_rounded,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            '忆光',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text('LUMIO', style: TextStyle(fontSize: 10)),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 28),
+                  for (final destination in destinations)
+                    _ShelfDestination(
+                      destination: destination,
+                      selected: state.section == destination.section,
+                      onTap: () => state.selectSection(destination.section),
+                    ),
+                  const Spacer(),
+                  if (state.mediaSources.isEmpty &&
+                      state.platformCapabilities.supportsFolderPicker)
+                    OutlinedButton.icon(
+                      onPressed: state.addMediaSources,
+                      icon: const Icon(Icons.add_rounded),
+                      label: const Text('添加媒体'),
+                    ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${state.audioItems.length} 首音乐  ·  '
+                    '${state.videoItems.length} 个视频',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShelfDestination extends StatelessWidget {
+  const _ShelfDestination({
+    required this.destination,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _LumioDestination destination;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: selected ? scheme.primaryContainer : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  selected ? destination.selectedIcon : destination.icon,
+                  color: selected
+                      ? scheme.onPrimaryContainer
+                      : scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  destination.label,
+                  style: TextStyle(
+                    color:
+                        selected ? scheme.onPrimaryContainer : scheme.onSurface,
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactShell extends StatelessWidget {
+  const _CompactShell({
+    required this.state,
+    required this.destinations,
+    required this.onOpenNowPlaying,
+  });
+
+  final LumioAppState state;
+  final List<_LumioDestination> destinations;
+  final VoidCallback onOpenNowPlaying;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final brightness = Theme.of(context).brightness;
+    final navigationColor = switch (state.section) {
+      AppSection.home ||
+      AppSection.music ||
+      AppSection.playlists =>
+        LumioTheme.audioColor(brightness),
+      AppSection.video => LumioTheme.videoColor(brightness),
+      AppSection.settings => scheme.primary,
+    };
+    return Scaffold(
+      body: SafeArea(bottom: false, child: _pageFor(state)),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          MiniPlayer(state: state, onExpand: onOpenNowPlaying),
+          NavigationBarTheme(
+            data: NavigationBarThemeData(
+              indicatorColor: navigationColor.withValues(
+                alpha: brightness == Brightness.dark ? 0.24 : 0.14,
+              ),
+            ),
+            child: NavigationBar(
+              selectedIndex: state.section.index,
+              onDestinationSelected: (index) {
+                state.selectSection(destinations[index].section);
+              },
+              destinations: destinations
+                  .map(
+                    (destination) => NavigationDestination(
+                      icon: Icon(destination.icon),
+                      selectedIcon: Icon(destination.selectedIcon),
+                      label: destination.label,
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Widget _pageFor(LumioAppState state) {
+  return switch (state.section) {
+    AppSection.home => MusicHomePage(state: state),
+    AppSection.music => MusicLibraryPage(state: state),
+    AppSection.playlists => PlaylistsPage(state: state),
+    AppSection.video => VideoPage(state: state),
+    AppSection.settings => SettingsPage(state: state),
+  };
+}
+
+class _LumioDestination {
+  const _LumioDestination({
+    required this.section,
+    required this.label,
+    required this.icon,
+    required this.selectedIcon,
+  });
+
+  final AppSection section;
+  final String label;
+  final IconData icon;
+  final IconData selectedIcon;
 }

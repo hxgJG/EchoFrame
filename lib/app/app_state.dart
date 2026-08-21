@@ -15,6 +15,7 @@ import '../platform/media_library/media_library_repository.dart';
 import '../platform/media_library/platform_media_library_repository.dart';
 import '../platform/media_library/media_visibility.dart';
 import '../platform/online_enhancement/online_enhancement_repository.dart';
+import '../platform/platform_capabilities.dart';
 import '../platform/playback/playback_repository.dart';
 import '../platform/playback/platform_playback_repository.dart';
 import 'seed_data.dart';
@@ -31,12 +32,15 @@ class LumioAppState extends ChangeNotifier {
         const PlatformAppStorageRepository(),
     PlaybackRepository? playbackRepository,
     OnlineEnhancementRepository? onlineEnhancementRepository,
+    PlatformCapabilities? platformCapabilities,
   })  : _mediaLibraryRepository = mediaLibraryRepository,
         _appStorageRepository = appStorageRepository,
         _playbackRepository =
             playbackRepository ?? PlatformPlaybackRepository(),
         _onlineEnhancementRepository =
             onlineEnhancementRepository ?? FileOnlineEnhancementRepository(),
+        _platformCapabilities =
+            platformCapabilities ?? PlatformCapabilities.current(),
         _audioItems = List<MediaItem>.from(seedAudioItems),
         _videoItems = List<MediaItem>.from(seedVideoItems),
         _playlists = List<Playlist>.from(seedPlaylists) {
@@ -50,6 +54,7 @@ class LumioAppState extends ChangeNotifier {
   final AppStorageRepository _appStorageRepository;
   final PlaybackRepository _playbackRepository;
   final OnlineEnhancementRepository _onlineEnhancementRepository;
+  final PlatformCapabilities _platformCapabilities;
   final Random _random = Random(7);
   final PlaybackInterruptionController _interruptionController =
       PlaybackInterruptionController();
@@ -72,6 +77,8 @@ class LumioAppState extends ChangeNotifier {
   PlaybackView _playbackView = PlaybackView.artwork;
   Duration _position = const Duration(minutes: 1, seconds: 12);
   bool _isScanningLibrary = false;
+  bool _isUpdatingMediaSources = false;
+  List<MediaSource> _mediaSources = const <MediaSource>[];
   MediaLibraryScanStatus? _lastScanStatus;
   String _libraryStatusMessage = '尚未扫描本机媒体。';
   int? _videoTextureId;
@@ -107,6 +114,10 @@ class LumioAppState extends ChangeNotifier {
   PlaybackView get playbackView => _playbackView;
   Duration get position => _position;
   bool get isScanningLibrary => _isScanningLibrary;
+  bool get isUpdatingMediaSources => _isUpdatingMediaSources;
+  List<MediaSource> get mediaSources =>
+      List<MediaSource>.unmodifiable(_mediaSources);
+  PlatformCapabilities get platformCapabilities => _platformCapabilities;
   MediaLibraryScanStatus? get lastScanStatus => _lastScanStatus;
   String get libraryStatusMessage => _libraryStatusMessage;
   int? get videoTextureId => _videoTextureId;
@@ -1132,6 +1143,66 @@ class LumioAppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> addMediaSources() async {
+    if (!_platformCapabilities.supportsFolderPicker ||
+        _isUpdatingMediaSources) {
+      return;
+    }
+    _isUpdatingMediaSources = true;
+    notifyListeners();
+    try {
+      final added = await _mediaLibraryRepository.addSources();
+      await _refreshMediaSources(notify: false);
+      if (added.isNotEmpty) {
+        _libraryStatusMessage = '已添加 ${added.length} 个媒体文件夹，正在建立索引。';
+        await scanMediaLibrary();
+      }
+    } catch (error) {
+      _libraryStatusMessage = '添加媒体文件夹失败：$error';
+    } finally {
+      _isUpdatingMediaSources = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> removeMediaSource(MediaSource source) async {
+    if (_isUpdatingMediaSources) {
+      return;
+    }
+    _isUpdatingMediaSources = true;
+    notifyListeners();
+    try {
+      await _mediaLibraryRepository.removeSource(source.id);
+      await _refreshMediaSources(notify: false);
+      _libraryStatusMessage = '已移除媒体来源「${source.displayName}」，源文件未删除。';
+    } catch (error) {
+      _libraryStatusMessage = '移除媒体来源失败：$error';
+    } finally {
+      _isUpdatingMediaSources = false;
+      _saveState();
+      notifyListeners();
+    }
+  }
+
+  Future<void> cancelMediaLibraryScan() async {
+    if (!_isScanningLibrary) {
+      return;
+    }
+    await _mediaLibraryRepository.cancelScan();
+    _libraryStatusMessage = '正在取消扫描…';
+    notifyListeners();
+  }
+
+  Future<void> _refreshMediaSources({bool notify = true}) async {
+    if (!_platformCapabilities.supportsPersistentFolderAccess) {
+      return;
+    }
+    _mediaSources = await _mediaLibraryRepository.listSources();
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
   Future<MediaFileOperationResult> _performFileOperation(
     MediaFileOperationRequest request,
   ) async {
@@ -1211,10 +1282,12 @@ class LumioAppState extends ChangeNotifier {
   Future<void> _restorePersistedState() async {
     final persisted = await _appStorageRepository.load();
     if (persisted != null && _applyPersistedState(persisted)) {
+      await _refreshMediaSources(notify: false);
       notifyListeners();
       return;
     }
     await _restoreLastScan();
+    await _refreshMediaSources();
   }
 
   Future<void> _restoreLastScan() async {
@@ -1614,7 +1687,7 @@ class LumioAppState extends ChangeNotifier {
   Map<String, Object?> _snapshotState({
     Set<AppStoragePartition> partitions = _allStoragePartitions,
   }) {
-    final snapshot = <String, Object?>{'schemaVersion': 1};
+    final snapshot = <String, Object?>{'schemaVersion': 2};
     if (partitions.contains(AppStoragePartition.library)) {
       snapshot.addAll(<String, Object?>{
         'audioItems': _audioItems.map((item) => item.toJson()).toList(),
