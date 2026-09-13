@@ -70,6 +70,7 @@ class MediaItem {
     this.playCount = 0,
     this.isFavorite = false,
     this.lyrics = const <LyricLine>[],
+    this.hasCustomLyrics = false,
     this.subtitles = const <SubtitleCue>[],
     this.lastPosition = Duration.zero,
     this.resolution,
@@ -109,6 +110,7 @@ class MediaItem {
             ),
           )
           .toList(growable: false),
+      hasCustomLyrics: json['hasCustomLyrics'] == true,
       subtitles: _asList(json['subtitles'])
           .whereType<Map<Object?, Object?>>()
           .map(
@@ -142,6 +144,7 @@ class MediaItem {
   final int playCount;
   final bool isFavorite;
   final List<LyricLine> lyrics;
+  final bool hasCustomLyrics;
   final List<SubtitleCue> subtitles;
   final Duration lastPosition;
   final String? resolution;
@@ -183,6 +186,7 @@ class MediaItem {
     int? playCount,
     bool? isFavorite,
     List<LyricLine>? lyrics,
+    bool? hasCustomLyrics,
     List<SubtitleCue>? subtitles,
     Duration? lastPosition,
     String? resolution,
@@ -208,6 +212,7 @@ class MediaItem {
       playCount: playCount ?? this.playCount,
       isFavorite: isFavorite ?? this.isFavorite,
       lyrics: lyrics ?? this.lyrics,
+      hasCustomLyrics: hasCustomLyrics ?? this.hasCustomLyrics,
       subtitles: subtitles ?? this.subtitles,
       lastPosition: lastPosition ?? this.lastPosition,
       resolution: resolution ?? this.resolution,
@@ -236,6 +241,7 @@ class MediaItem {
       'playCount': playCount,
       'isFavorite': isFavorite,
       'lyrics': lyrics.map((line) => line.toJson()).toList(growable: false),
+      'hasCustomLyrics': hasCustomLyrics,
       'subtitles': subtitles.map((cue) => cue.toJson()).toList(growable: false),
       'lastPositionMs': lastPosition.inMilliseconds,
       'resolution': resolution,

@@ -2,6 +2,7 @@ import AVFoundation
 import Cocoa
 import CryptoKit
 import FlutterMacOS
+import UniformTypeIdentifiers
 
 final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
   private struct IndexedMedia {
@@ -122,6 +123,8 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
         guard let self else { return }
         self.finish(result, value: self.performFileOperation(arguments))
       }
+    case "importLyrics":
+      presentLyricsPicker(result: result)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -155,6 +158,92 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
     } else {
       completion(panel.runModal())
     }
+  }
+
+  private func presentLyricsPicker(result: @escaping FlutterResult) {
+    let panel = NSOpenPanel()
+    panel.title = "选择 LRC 歌词文件"
+    panel.message = "所选歌词会绑定到当前歌曲，并保存在忆光媒体库中。"
+    panel.prompt = "导入"
+    panel.canChooseDirectories = false
+    panel.canChooseFiles = true
+    panel.allowsMultipleSelection = false
+    panel.resolvesAliases = true
+    panel.allowedContentTypes = [
+      UTType(filenameExtension: "lrc") ?? .plainText,
+      .plainText,
+    ]
+
+    let completion: (NSApplication.ModalResponse) -> Void = { response in
+      guard response == .OK, let url = panel.url else {
+        result(self.lyricsImportResult(status: "cancelled", message: "已取消选择歌词文件。"))
+        return
+      }
+      guard url.pathExtension.caseInsensitiveCompare("lrc") == .orderedSame else {
+        result(self.lyricsImportResult(status: "failed", message: "请选择 .lrc 格式的歌词文件。"))
+        return
+      }
+      let isAccessing = url.startAccessingSecurityScopedResource()
+      defer {
+        if isAccessing {
+          url.stopAccessingSecurityScopedResource()
+        }
+      }
+      do {
+        let values = try url.resourceValues(forKeys: [.fileSizeKey])
+        guard (values.fileSize ?? 0) <= 2 * 1024 * 1024 else {
+          result(self.lyricsImportResult(status: "failed", message: "歌词文件不能超过 2 MB。"))
+          return
+        }
+        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        guard data.count <= 2 * 1024 * 1024 else {
+          result(self.lyricsImportResult(status: "failed", message: "歌词文件不能超过 2 MB。"))
+          return
+        }
+        guard let decoded = String(data: data, encoding: .utf8)
+          ?? String(data: data, encoding: .utf16)
+          ?? String(data: data, encoding: .utf16LittleEndian)
+          ?? String(data: data, encoding: .utf16BigEndian) else {
+          result(self.lyricsImportResult(status: "failed", message: "歌词文件编码无法识别，请使用 UTF-8 或 UTF-16。"))
+          return
+        }
+        let text = decoded.replacingOccurrences(
+          of: "\u{FEFF}",
+          with: "",
+          options: .anchored
+        )
+        result(self.lyricsImportResult(
+          status: "completed",
+          message: "歌词文件已读取。",
+          fileName: url.lastPathComponent,
+          lyricsText: text
+        ))
+      } catch {
+        result(self.lyricsImportResult(
+          status: "failed",
+          message: error.localizedDescription
+        ))
+      }
+    }
+    if let window {
+      panel.beginSheetModal(for: window, completionHandler: completion)
+    } else {
+      completion(panel.runModal())
+    }
+  }
+
+  private func lyricsImportResult(
+    status: String,
+    message: String,
+    fileName: String = "",
+    lyricsText: String = ""
+  ) -> [String: Any] {
+    [
+      "status": status,
+      "message": message,
+      "fileName": fileName,
+      "lyricsText": lyricsText,
+    ]
   }
 
   private func startScan(

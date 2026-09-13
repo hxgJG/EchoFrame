@@ -6,6 +6,7 @@ import '../../core/lyrics/lrc_parser.dart';
 import '../../core/models/media_item.dart';
 import '../../core/subtitles/ass_parser.dart';
 import '../../core/subtitles/srt_parser.dart';
+import 'lyrics_import.dart';
 import 'media_file_operation.dart';
 import 'media_library_repository.dart';
 
@@ -71,6 +72,38 @@ class PlatformMediaLibraryRepository implements MediaLibraryRepository {
       await _channel.invokeMethod<void>('cancelScan');
     } on MissingPluginException {
       return;
+    }
+  }
+
+  @override
+  Future<LyricsImportResult> importLyrics() async {
+    if (!_isSupportedPlatform) {
+      return const LyricsImportResult(
+        status: LyricsImportStatus.unsupported,
+        message: '当前平台暂不支持导入歌词文件。',
+      );
+    }
+    try {
+      final raw = await _channel.invokeMapMethod<Object?, Object?>(
+        'importLyrics',
+      );
+      if (raw == null) {
+        return const LyricsImportResult(
+          status: LyricsImportStatus.failed,
+          message: '平台侧没有返回歌词文件。',
+        );
+      }
+      return LyricsImportResult.fromJson(raw);
+    } on PlatformException catch (error) {
+      return LyricsImportResult(
+        status: LyricsImportStatus.failed,
+        message: error.message ?? '歌词文件导入失败。',
+      );
+    } on MissingPluginException {
+      return const LyricsImportResult(
+        status: LyricsImportStatus.unsupported,
+        message: '当前平台尚未注册歌词文件选择器。',
+      );
     }
   }
 

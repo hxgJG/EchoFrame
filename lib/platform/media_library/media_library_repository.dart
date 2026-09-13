@@ -1,4 +1,5 @@
 import '../../core/models/media_item.dart';
+import 'lyrics_import.dart';
 import 'media_file_operation.dart';
 
 enum MediaLibraryScanStatus {
@@ -81,6 +82,13 @@ abstract class MediaLibraryRepository {
   Future<void> removeSource(String sourceId) async {}
 
   Future<void> cancelScan() async {}
+
+  Future<LyricsImportResult> importLyrics() async {
+    return const LyricsImportResult(
+      status: LyricsImportStatus.unsupported,
+      message: '当前平台暂不支持导入歌词文件。',
+    );
+  }
 
   Future<MediaLibraryScanResult> scan(MediaLibraryScanFilter filter);
 

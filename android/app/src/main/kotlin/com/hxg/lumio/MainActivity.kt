@@ -36,6 +36,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.util.Rational
 import android.view.Surface
 import androidx.core.content.ContextCompat
@@ -82,9 +83,11 @@ class MainActivity : FlutterActivity() {
     private val appStatePartitions = listOf("session", "library", "playlists")
     private val permissionRequestCode = 2407
     private val fileOperationRequestCode = 2410
+    private val lyricsPickerRequestCode = 2411
     private var pendingScanResult: MethodChannel.Result? = null
     private var pendingScanArguments: Any? = null
     private var pendingFileOperation: PendingMediaFileOperation? = null
+    private var pendingLyricsImportResult: MethodChannel.Result? = null
     private var playbackChannel: MethodChannel? = null
     private var mediaControllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
@@ -194,6 +197,7 @@ class MainActivity : FlutterActivity() {
                     "restoreLastScan" -> restoreLastScan(result)
                     "loadArtwork" -> loadArtwork(call.arguments, result)
                     "performFileOperation" -> performMediaFileOperation(call.arguments, result)
+                    "importLyrics" -> importLyrics(result)
                     else -> result.notImplemented()
                 }
             }
@@ -692,6 +696,10 @@ class MainActivity : FlutterActivity() {
             fileOperationResult("cancelled", "Activity 已关闭，文件操作未完成。"),
         )
         pendingFileOperation = null
+        pendingLyricsImportResult?.success(
+            lyricsImportResult("cancelled", "Activity 已关闭，歌词导入未完成。"),
+        )
+        pendingLyricsImportResult = null
         equalizer?.release()
         equalizer = null
         releaseVideoSurface()
@@ -712,6 +720,10 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == lyricsPickerRequestCode) {
+            completeLyricsImport(resultCode, data)
+            return
+        }
         if (requestCode != fileOperationRequestCode) {
             return
         }
@@ -734,6 +746,121 @@ class MainActivity : FlutterActivity() {
             )
         }
     }
+
+    private fun importLyrics(result: MethodChannel.Result) {
+        if (pendingLyricsImportResult != null) {
+            result.success(lyricsImportResult("failed", "已有歌词文件正在选择中。"))
+            return
+        }
+        pendingLyricsImportResult = result
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+        try {
+            startActivityForResult(
+                Intent.createChooser(intent, "选择 LRC 歌词文件"),
+                lyricsPickerRequestCode,
+            )
+        } catch (error: Exception) {
+            pendingLyricsImportResult = null
+            result.success(
+                lyricsImportResult(
+                    "failed",
+                    error.message ?: "无法打开歌词文件选择器。",
+                ),
+            )
+        }
+    }
+
+    private fun completeLyricsImport(resultCode: Int, data: Intent?) {
+        val result = pendingLyricsImportResult ?: return
+        pendingLyricsImportResult = null
+        if (resultCode != Activity.RESULT_OK || data?.data == null) {
+            result.success(lyricsImportResult("cancelled", "已取消选择歌词文件。"))
+            return
+        }
+        val uri = data.data!!
+        mediaScanExecutor.execute {
+            val response = try {
+                val fileName = queryDisplayName(uri)
+                if (!fileName.endsWith(".lrc", ignoreCase = true)) {
+                    lyricsImportResult("failed", "请选择 .lrc 格式的歌词文件。")
+                } else {
+                    val text = readLyricsText(uri)
+                    lyricsImportResult(
+                        status = "completed",
+                        message = "歌词文件已读取。",
+                        fileName = fileName,
+                        lyricsText = text,
+                    )
+                }
+            } catch (error: Exception) {
+                lyricsImportResult(
+                    "failed",
+                    error.message ?: "歌词文件读取失败。",
+                )
+            }
+            runOnUiThread { result.success(response) }
+        }
+    }
+
+    private fun queryDisplayName(uri: Uri): String {
+        contentResolver.query(
+            uri,
+            arrayOf(OpenableColumns.DISPLAY_NAME),
+            null,
+            null,
+            null,
+        )?.use { cursor ->
+            val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (index >= 0 && cursor.moveToFirst()) {
+                cursor.getString(index)?.takeIf(String::isNotBlank)?.let { return it }
+            }
+        }
+        return uri.lastPathSegment.orEmpty()
+    }
+
+    private fun readLyricsText(uri: Uri): String {
+        val maximumBytes = 2 * 1024 * 1024
+        val input = contentResolver.openInputStream(uri)
+            ?: throw IllegalStateException("无法打开歌词文件。")
+        return input.use { stream ->
+            ByteArrayOutputStream().use { output ->
+                val buffer = ByteArray(8192)
+                var totalBytes = 0
+                while (true) {
+                    val read = stream.read(buffer)
+                    if (read < 0) break
+                    totalBytes += read
+                    if (totalBytes > maximumBytes) {
+                        throw IllegalArgumentException("歌词文件不能超过 2 MB。")
+                    }
+                    output.write(buffer, 0, read)
+                }
+                val bytes = output.toByteArray()
+                when {
+                    bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() ->
+                        String(bytes, 2, bytes.size - 2, Charsets.UTF_16LE)
+                    bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte() ->
+                        String(bytes, 2, bytes.size - 2, Charsets.UTF_16BE)
+                    else -> String(bytes, Charsets.UTF_8).removePrefix("\uFEFF")
+                }
+            }
+        }
+    }
+
+    private fun lyricsImportResult(
+        status: String,
+        message: String,
+        fileName: String = "",
+        lyricsText: String = "",
+    ): Map<String, Any> = mapOf(
+        "status" to status,
+        "message" to message,
+        "fileName" to fileName,
+        "lyricsText" to lyricsText,
+    )
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()

@@ -2,6 +2,7 @@ import fs from '@ohos.file.fs';
 import picker from '@ohos.file.picker';
 import photoAccessHelper from '@ohos.file.photoAccessHelper';
 import common from '@ohos.app.ability.common';
+import util from '@ohos.util';
 import { media } from '@kit.MediaKit';
 import { BusinessError } from '@ohos.base';
 import {
@@ -42,9 +43,17 @@ interface FileFacts {
   modifiedAtMs: number;
 }
 
+interface LyricsImportPayload {
+  status: string;
+  message: string;
+  fileName: string;
+  lyricsText: string;
+}
+
 const CHANNEL_NAME = 'lumio/media_library';
 const PICKER_RESULT_MESSAGE = 'HarmonyOS 已按系统隐私策略导入用户选择的媒体。';
 const MAX_SELECT_NUMBER = 500;
+const MAX_LYRICS_FILE_BYTES = 2 * 1024 * 1024;
 
 export default class LumioMediaLibraryPlugin implements FlutterPlugin, AbilityAware, MethodCallHandler {
   private channel: MethodChannel | null = null;
@@ -82,10 +91,93 @@ export default class LumioMediaLibraryPlugin implements FlutterPlugin, AbilityAw
       case 'restoreLastScan':
         result.success(this.emptyResult('HarmonyOS 媒体由用户选择导入，暂无平台侧扫描快照。'));
         break;
+      case 'importLyrics':
+        this.importLyrics(result);
+        break;
       default:
         result.notImplemented();
         break;
     }
+  }
+
+  private async importLyrics(result: MethodResult): Promise<void> {
+    if (this.abilityContext === null) {
+      result.error('unavailable', 'HarmonyOS Ability 上下文尚未就绪。', null);
+      return;
+    }
+    try {
+      const documentPicker = new picker.DocumentViewPicker(this.abilityContext);
+      const options = new picker.DocumentSelectOptions();
+      options.maxSelectNumber = 1;
+      options.fileSuffixFilters = ['.lrc'];
+      const uris = await documentPicker.select(options);
+      if (uris.length === 0) {
+        result.success(this.lyricsImportResult('cancelled', '已取消选择歌词文件。'));
+        return;
+      }
+      const uri = uris[0];
+      const fileName = this.displayNameFromUri(uri);
+      if (this.extensionOf(fileName).toLowerCase() !== 'lrc') {
+        result.success(this.lyricsImportResult('failed', '请选择 .lrc 格式的歌词文件。'));
+        return;
+      }
+      const lyricsText = this.readLyricsText(uri);
+      result.success(this.lyricsImportResult(
+        'completed',
+        '歌词文件已读取。',
+        fileName,
+        lyricsText,
+      ));
+    } catch (error) {
+      if (this.isPickerCancelled(error)) {
+        result.success(this.lyricsImportResult('cancelled', '已取消选择歌词文件。'));
+        return;
+      }
+      result.success(this.lyricsImportResult(
+        'failed',
+        this.errorMessage(error, '歌词文件读取失败。'),
+      ));
+    }
+  }
+
+  private readLyricsText(uri: string): string {
+    let fd = -1;
+    try {
+      const file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
+      fd = file.fd;
+      const size = fs.statSync(fd).size;
+      if (size > MAX_LYRICS_FILE_BYTES) {
+        throw new Error('歌词文件不能超过 2 MB。');
+      }
+      const buffer = new ArrayBuffer(size);
+      const bytesRead = fs.readSync(fd, buffer);
+      const bytes = new Uint8Array(buffer, 0, bytesRead);
+      const encoding = bytesRead >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE
+        ? 'utf-16le'
+        : bytesRead >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF
+          ? 'utf-16be'
+          : 'utf-8';
+      return util.TextDecoder.create(encoding, { ignoreBOM: true }).decodeWithStream(bytes);
+    } finally {
+      if (fd >= 0) {
+        this.closeFd(fd);
+      }
+    }
+  }
+
+  private lyricsImportResult(
+    status: string,
+    message: string,
+    fileName: string = '',
+    lyricsText: string = '',
+  ): LyricsImportPayload {
+    const payload: LyricsImportPayload = {
+      status: status,
+      message: message,
+      fileName: fileName,
+      lyricsText: lyricsText,
+    };
+    return payload;
   }
 
   private async scan(result: MethodResult): Promise<void> {

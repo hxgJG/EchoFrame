@@ -8,6 +8,7 @@ import '../../app/theme.dart';
 import '../../core/models/lumio_settings.dart';
 import '../../core/models/media_item.dart';
 import '../../core/playback/playback_page_gesture.dart';
+import '../../platform/media_library/lyrics_import.dart';
 import '../../shared/widgets/media_tile.dart';
 
 class NowPlayingPage extends StatefulWidget {
@@ -266,11 +267,26 @@ class _LyricsStageState extends State<_LyricsStage> {
       ),
       child: lines.isEmpty
           ? Center(
-              child: Text(
-                '未找到本地歌词',
-                style: textTheme.titleMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    '未找到本地歌词',
+                    style: textTheme.titleMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  OutlinedButton.icon(
+                    onPressed: () => _importLyrics(
+                      context,
+                      widget.state,
+                      widget.item,
+                    ),
+                    icon: const Icon(Icons.upload_file_rounded),
+                    label: const Text('导入 LRC 歌词'),
+                  ),
+                ],
               ),
             )
           : ListView.builder(
@@ -1021,14 +1037,15 @@ class _ToolRow extends StatelessWidget {
 }
 
 void _showMoreActions(BuildContext context, LumioAppState state) {
+  final pageContext = context;
   showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
     builder: (context) => SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        child: ListView(
+          shrinkWrap: true,
           children: <Widget>[
             ListTile(
               leading: const Icon(Icons.looks_one_rounded),
@@ -1068,8 +1085,54 @@ void _showMoreActions(BuildContext context, LumioAppState state) {
                   _showMetadataDialog(context, state, item);
                 },
               ),
+            if (state.currentItem case final item?
+                when item.kind == MediaKind.audio)
+              ListTile(
+                leading: const Icon(Icons.upload_file_rounded),
+                title: Text(item.lyrics.isEmpty ? '导入歌词' : '替换歌词'),
+                subtitle: const Text('选择单独的 LRC 歌词文件'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _importLyrics(pageContext, state, item);
+                },
+              ),
+            if (state.currentItem case final item?
+                when item.kind == MediaKind.audio && item.lyrics.isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.lyrics_outlined),
+                title: const Text('移除歌词'),
+                onTap: () {
+                  state.removeLyrics(item.id);
+                  Navigator.of(context).pop();
+                  ScaffoldMessenger.of(pageContext).showSnackBar(
+                    const SnackBar(content: Text('已移除当前歌曲的歌词。')),
+                  );
+                },
+              ),
           ],
         ),
+      ),
+    ),
+  );
+}
+
+Future<void> _importLyrics(
+  BuildContext context,
+  LumioAppState state,
+  MediaItem item,
+) async {
+  final result = await state.importLyrics(item.id);
+  if (!context.mounted || result.status == LyricsImportStatus.cancelled) {
+    return;
+  }
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(
+        result.message.isEmpty
+            ? result.didImport
+                ? '歌词已导入。'
+                : '歌词导入失败。'
+            : result.message,
       ),
     ),
   );

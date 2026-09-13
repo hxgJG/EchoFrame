@@ -10,6 +10,7 @@ import '../core/lyrics/lrc_parser.dart';
 import '../core/playback/playback_interruption_controller.dart';
 import '../platform/app_storage/app_storage_repository.dart';
 import '../platform/app_storage/platform_app_storage_repository.dart';
+import '../platform/media_library/lyrics_import.dart';
 import '../platform/media_library/media_file_operation.dart';
 import '../platform/media_library/media_library_repository.dart';
 import '../platform/media_library/platform_media_library_repository.dart';
@@ -801,6 +802,63 @@ class LumioAppState extends ChangeNotifier {
             : nextArtist,
         album:
             nextAlbum == null || nextAlbum.isEmpty ? current.album : nextAlbum,
+      ),
+    );
+    _saveState(
+      partitions: const <AppStoragePartition>{
+        AppStoragePartition.library,
+      },
+    );
+    notifyListeners();
+  }
+
+  Future<LyricsImportResult> importLyrics(String mediaId) async {
+    final current = _findItem(mediaId);
+    if (current == null || current.kind != MediaKind.audio) {
+      return const LyricsImportResult(
+        status: LyricsImportStatus.failed,
+        message: '只能为媒体库中的音乐导入歌词。',
+      );
+    }
+    final result = await _mediaLibraryRepository.importLyrics();
+    if (!result.didImport) {
+      return result;
+    }
+    final lyrics = parseLrc(result.lyricsText);
+    if (lyrics.isEmpty) {
+      return result.copyWith(
+        status: LyricsImportStatus.failed,
+        message: '没有解析到带时间标签的歌词，请选择有效的 LRC 文件。',
+      );
+    }
+    _replaceItem(
+      current.copyWith(
+        lyrics: lyrics,
+        hasCustomLyrics: true,
+      ),
+    );
+    _playbackView = PlaybackView.lyrics;
+    _saveState(
+      partitions: const <AppStoragePartition>{
+        AppStoragePartition.session,
+        AppStoragePartition.library,
+      },
+    );
+    notifyListeners();
+    return result.copyWith(
+      message: '已为《${current.title}》导入 ${lyrics.length} 行歌词。',
+    );
+  }
+
+  void removeLyrics(String mediaId) {
+    final current = _findItem(mediaId);
+    if (current == null || current.kind != MediaKind.audio) {
+      return;
+    }
+    _replaceItem(
+      current.copyWith(
+        lyrics: const <LyricLine>[],
+        hasCustomLyrics: false,
       ),
     );
     _saveState(
@@ -1778,6 +1836,9 @@ class LumioAppState extends ChangeNotifier {
         playCount: previous.playCount,
         isFavorite: previous.isFavorite,
         lastPosition: previous.lastPosition,
+        // 用户单独选择的歌词优先于扫描时发现的同名歌词。
+        lyrics: previous.hasCustomLyrics ? previous.lyrics : item.lyrics,
+        hasCustomLyrics: previous.hasCustomLyrics,
       );
     }).toList(growable: false);
   }
