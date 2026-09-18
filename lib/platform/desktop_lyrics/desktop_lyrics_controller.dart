@@ -17,9 +17,24 @@ class DesktopLyricsController extends ChangeNotifier {
   Map<String, Object>? _sent;
   Future<void>? _ready;
 
-  void initialize() {
+  void initialize({
+    required VoidCallback onPrevious,
+    required VoidCallback onTogglePlaying,
+    required VoidCallback onNext,
+  }) {
     if (!supported || _ready != null) return;
     _channel.setMethodCallHandler((call) async {
+      if (_disposed) return;
+      if (call.method == 'playbackAction' && enabled && !locked) {
+        switch (call.arguments) {
+          case 'previous':
+            onPrevious();
+          case 'togglePlaying':
+            onTogglePlaying();
+          case 'next':
+            onNext();
+        }
+      }
       if (call.method == 'settingsChanged' && !_disposed) {
         _applySettings(Map<Object?, Object?>.from(call.arguments as Map));
       }

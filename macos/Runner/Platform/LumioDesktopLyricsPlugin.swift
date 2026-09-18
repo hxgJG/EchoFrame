@@ -13,6 +13,10 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
   private let enabledKey = "lumio.desktopLyrics.enabled"
   private let lockedKey = "lumio.desktopLyrics.locked"
   private let originKey = "lumio.desktopLyrics.origin"
+  private let widthKey = "lumio.desktopLyrics.width"
+  private let minimumWidth: CGFloat = 360
+  private let maximumWidth: CGFloat = 720
+  private let panelHeight: CGFloat = 87
 
   static func register(with registrar: FlutterPluginRegistrar) {}
 
@@ -54,6 +58,7 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
       if enabled && isAudio {
         ensurePanel()
         lyricsView?.applyAppearance(args)
+        lyricsView?.setControlsEnabled(args["canControl"] as? Bool ?? false)
         lyricsView?.update(
           title: String((args["title"] as? String ?? "忆光").prefix(300)),
           current: String((args["current"] as? String ?? "").prefix(1024)),
@@ -88,8 +93,8 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
   private func ensurePanel() {
     guard panel == nil else { return }
     let window = LyricsPanel(
-      contentRect: NSRect(x: 0, y: 0, width: 720, height: 87),
-      styleMask: [.borderless, .nonactivatingPanel],
+      contentRect: NSRect(x: 0, y: 0, width: maximumWidth, height: panelHeight),
+      styleMask: [.borderless, .nonactivatingPanel, .resizable],
       backing: .buffered, defer: false
     )
     window.title = "忆光 · 桌面歌词"
@@ -103,6 +108,8 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
     window.backgroundColor = .clear
     window.hasShadow = true
     window.isMovableByWindowBackground = true
+    window.minSize = NSSize(width: minimumWidth, height: panelHeight)
+    window.maxSize = NSSize(width: maximumWidth, height: panelHeight)
     let content = LyricsView(frame: NSRect(x: 0, y: 0, width: 720, height: 87))
     content.onClose = { [weak self] in
       guard let self else { return }
@@ -117,6 +124,10 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
       self.persistSettings()
       self.reconcileVisibility()
       self.channel.invokeMethod("settingsChanged", arguments: self.settings)
+    }
+    content.onPlaybackAction = { [weak self] action in
+      guard let self, self.enabled, !self.locked, self.isAudio else { return }
+      self.channel.invokeMethod("playbackAction", arguments: action)
     }
     window.contentView = content
     panel = window
@@ -141,6 +152,9 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
   private func placePanel(reset: Bool) {
     guard let panel, let mainScreen = NSScreen.main ?? NSScreen.screens.first else { return }
     var frame = panel.frame
+    let savedWidth = defaults.double(forKey: widthKey)
+    frame.size.width = savedWidth.isFinite && savedWidth > 0
+      ? min(max(CGFloat(savedWidth), minimumWidth), maximumWidth) : maximumWidth
     if !reset, let saved = defaults.dictionary(forKey: originKey),
        let x = saved["x"] as? Double, let y = saved["y"] as? Double,
        x.isFinite, y.isFinite {
@@ -153,7 +167,11 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
     }
     let screen = NSScreen.screens.first { $0.visibleFrame.intersects(frame) } ?? mainScreen
     let bounds = screen.visibleFrame.insetBy(dx: 12, dy: 12)
-    frame.size.width = min(720, bounds.width)
+    let availableWidth = min(maximumWidth, bounds.width)
+    panel.minSize = NSSize(width: min(minimumWidth, availableWidth), height: panelHeight)
+    panel.maxSize = NSSize(width: availableWidth, height: panelHeight)
+    frame.size.width = min(frame.width, availableWidth)
+    frame.size.height = panelHeight
     frame.origin.x = min(max(frame.minX, bounds.minX), bounds.maxX - frame.width)
     frame.origin.y = min(max(frame.minY, bounds.minY), bounds.maxY - frame.height)
     panel.setFrame(frame, display: true)
@@ -164,6 +182,22 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
   func windowDidMove(_ notification: Notification) {
     guard let origin = panel?.frame.origin else { return }
     defaults.set(["x": Double(origin.x), "y": Double(origin.y)], forKey: originKey)
+  }
+
+  func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+    if locked { return sender.frame.size }
+    return NSSize(
+      width: min(max(frameSize.width, sender.minSize.width), sender.maxSize.width),
+      height: panelHeight
+    )
+  }
+
+  func windowDidEndLiveResize(_ notification: Notification) {
+    guard let panel else { return }
+    defaults.set(Double(panel.frame.width), forKey: widthKey)
+    // 左侧缩放也会改变原点；一并保存并确保窗口留在可见屏幕内。
+    windowDidMove(notification)
+    placePanel(reset: false)
   }
 
   deinit { NotificationCenter.default.removeObserver(self) }
@@ -178,11 +212,15 @@ private final class LyricsPanel: NSPanel {
 private final class LyricsView: NSView {
   var onClose: (() -> Void)?
   var onLock: (() -> Void)?
+  var onPlaybackAction: ((String) -> Void)?
   private let titleLabel = NSTextField(labelWithString: "忆光 · 桌面歌词")
   private let currentLabel = NSTextField(wrappingLabelWithString: "等待播放音乐…")
   private let nextLabel = NSTextField(labelWithString: "")
   private let lockButton = NSButton(title: "锁定", target: nil, action: nil)
   private let closeButton = NSButton(title: "关闭", target: nil, action: nil)
+  private let previousButton = NSButton(title: "", target: nil, action: nil)
+  private let playButton = NSButton(title: "", target: nil, action: nil)
+  private let nextButton = NSButton(title: "", target: nil, action: nil)
   private var locked = false
   override var isFlipped: Bool { true }
 
@@ -190,7 +228,7 @@ private final class LyricsView: NSView {
     super.init(frame: frameRect)
     wantsLayer = true
     layer?.cornerRadius = 12
-    layer?.backgroundColor = NSColor(srgbRed: 0.97, green: 0.99, blue: 0.96, alpha: 0.96).cgColor
+    layer?.backgroundColor = NSColor(srgbRed: 0.97, green: 0.99, blue: 0.96, alpha: 0.82).cgColor
     layer?.borderWidth = 1
     layer?.borderColor = NSColor(srgbRed: 0.70, green: 0.86, blue: 0.78, alpha: 1).cgColor
     let ink = NSColor(srgbRed: 0.15, green: 0.42, blue: 0.36, alpha: 1)
@@ -221,13 +259,34 @@ private final class LyricsView: NSView {
     lockButton.toolTip = "锁定并穿透鼠标；从设置或显示菜单解锁"
     closeButton.action = #selector(closeLyrics)
     closeButton.toolTip = "关闭桌面歌词，不停止音乐"
+    for (button, symbol, label, action) in [
+      (previousButton, "backward.end.fill", "上一首", #selector(previousTrack)),
+      (playButton, "play.fill", "播放", #selector(togglePlayback)),
+      (nextButton, "forward.end.fill", "下一首", #selector(nextTrack))
+    ] {
+      button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+      button.imagePosition = .imageOnly
+      button.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+      button.bezelStyle = .rounded
+      button.controlSize = .small
+      button.toolTip = label
+      button.setAccessibilityLabel(label)
+      button.target = self
+      button.action = action
+      button.isEnabled = false
+      addSubview(button)
+    }
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
   override func layout() {
     super.layout()
-    titleLabel.frame = NSRect(x: 14, y: 6, width: max(0, bounds.width - 142), height: 16)
+    titleLabel.frame = NSRect(x: 14, y: 6,
+      width: max(0, bounds.width - (locked ? 28 : 238)), height: 16)
+    previousButton.frame = NSRect(x: bounds.width - 218, y: 3, width: 28, height: 22)
+    playButton.frame = NSRect(x: bounds.width - 188, y: 3, width: 28, height: 22)
+    nextButton.frame = NSRect(x: bounds.width - 158, y: 3, width: 28, height: 22)
     lockButton.frame = NSRect(x: bounds.width - 122, y: 3, width: 52, height: 22)
     closeButton.frame = NSRect(x: bounds.width - 64, y: 3, width: 52, height: 22)
     currentLabel.frame = NSRect(x: 16, y: 29, width: bounds.width - 32, height: 24)
@@ -238,7 +297,16 @@ private final class LyricsView: NSView {
     titleLabel.stringValue = "\(playing ? "正在播放" : "已暂停") · \(title)"
     currentLabel.stringValue = current
     nextLabel.stringValue = next
+    let playLabel = playing ? "暂停" : "播放"
+    playButton.image = NSImage(systemSymbolName: playing ? "pause.fill" : "play.fill",
+      accessibilityDescription: playLabel)
+    playButton.toolTip = playLabel
+    playButton.setAccessibilityLabel(playLabel)
     setLocked(locked)
+  }
+
+  func setControlsEnabled(_ enabled: Bool) {
+    for button in [previousButton, playButton, nextButton] { button.isEnabled = enabled }
   }
 
   func applyAppearance(_ args: [String: Any]) {
@@ -253,7 +321,7 @@ private final class LyricsView: NSView {
       )
     }
     if let background = color("backgroundColor") {
-      layer?.backgroundColor = background.withAlphaComponent(0.96).cgColor
+      layer?.backgroundColor = background.withAlphaComponent(0.82).cgColor
     }
     if let border = color("borderColor") { layer?.borderColor = border.cgColor }
     if let foreground = color("foregroundColor") { currentLabel.textColor = foreground }
@@ -270,6 +338,8 @@ private final class LyricsView: NSView {
     locked = value
     lockButton.isHidden = value
     closeButton.isHidden = value
+    for button in [previousButton, playButton, nextButton] { button.isHidden = value }
+    needsLayout = true
   }
 
   override func mouseDown(with event: NSEvent) {
@@ -278,4 +348,7 @@ private final class LyricsView: NSView {
 
   @objc private func lockLyrics() { onLock?() }
   @objc private func closeLyrics() { onClose?() }
+  @objc private func previousTrack() { onPlaybackAction?("previous") }
+  @objc private func togglePlayback() { onPlaybackAction?("togglePlaying") }
+  @objc private func nextTrack() { onPlaybackAction?("next") }
 }

@@ -51,7 +51,11 @@ class LumioAppState extends ChangeNotifier {
         _playbackRepository.events.listen(_handlePlaybackEvent);
     addListener(_syncDesktopLyrics);
     desktopLyrics.addListener(_desktopLyricsChanged);
-    desktopLyrics.initialize();
+    desktopLyrics.initialize(
+      onPrevious: previous,
+      onTogglePlaying: togglePlaying,
+      onNext: next,
+    );
     _restorePersistedState();
   }
 
@@ -180,6 +184,7 @@ class LumioAppState extends ChangeNotifier {
       'audio': item == null || item.kind == MediaKind.audio,
       'title': item?.title ?? '忆光 · 桌面歌词',
       'playing': _isPlaying,
+      'canControl': item?.kind == MediaKind.audio,
       'current': item == null
           ? '播放音乐后在这里显示歌词'
           : lines.isEmpty
