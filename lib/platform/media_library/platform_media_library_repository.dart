@@ -349,18 +349,18 @@ class PlatformMediaLibraryRepository implements MediaLibraryRepository {
 
   Color _accentFor(String id, MediaKind kind) {
     const audioPalette = <Color>[
-      Color(0xFFFFB000),
-      Color(0xFFFF9A1A),
-      Color(0xFFF27600),
-      Color(0xFFFFC044),
-      Color(0xFFE87500),
+      Color(0xFF276B5B),
+      Color(0xFF326C66),
+      Color(0xFF566C61),
+      Color(0xFF387565),
+      Color(0xFF426D59),
     ];
     const videoPalette = <Color>[
-      Color(0xFF18DDBE),
-      Color(0xFF00A98F),
-      Color(0xFF00B8D4),
-      Color(0xFF28D7C4),
-      Color(0xFF008EA4),
+      Color(0xFF9B5141),
+      Color(0xFFA15749),
+      Color(0xFF945347),
+      Color(0xFF905A4C),
+      Color(0xFF995745),
     ];
     final palette = kind == MediaKind.audio ? audioPalette : videoPalette;
     return palette[id.hashCode.abs() % palette.length];

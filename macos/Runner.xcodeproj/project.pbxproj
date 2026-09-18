@@ -21,6 +21,7 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		B20000112026091800000001 /* LumioDesktopLyricsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000012026091800000001 /* LumioDesktopLyricsPlugin.swift */; };
 		331C80D8294CF71000263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C80D7294CF71000263BE5 /* RunnerTests.swift */; };
 		335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */; };
 		33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC10F02044A3C60003C045 /* AppDelegate.swift */; };
@@ -68,6 +69,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B20000012026091800000001 /* LumioDesktopLyricsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LumioDesktopLyricsPlugin.swift; sourceTree = "<group>"; };
 		10393C525DB88167136AE121 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
 		32D6902EFE7189F3207D193B /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		331C80D5294CF71000263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -202,6 +204,7 @@
 			isa = PBXGroup;
 			children = (
 				A10000012026080300000001 /* LumioMacOSPlugins.swift */,
+				B20000012026091800000001 /* LumioDesktopLyricsPlugin.swift */,
 				A10000022026080300000002 /* SecurityScopedBookmarkStore.swift */,
 				A10000032026080300000003 /* LumioAppStoragePlugin.swift */,
 				A10000042026080300000004 /* LumioMediaLibraryPlugin.swift */,
@@ -464,6 +467,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000112026080300000001 /* LumioMacOSPlugins.swift in Sources */,
+				B20000112026091800000001 /* LumioDesktopLyricsPlugin.swift in Sources */,
 				A10000122026080300000002 /* SecurityScopedBookmarkStore.swift in Sources */,
 				A10000132026080300000003 /* LumioAppStoragePlugin.swift in Sources */,
 				A10000142026080300000004 /* LumioMediaLibraryPlugin.swift in Sources */,

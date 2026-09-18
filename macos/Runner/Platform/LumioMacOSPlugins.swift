@@ -18,6 +18,7 @@ enum LumioMacOSPlugins {
       bookmarkStore: bookmarkStore,
       window: window
     )
-    retainedPlugins = [storage, mediaLibrary, playback]
+    let desktopLyrics = LumioDesktopLyricsPlugin(registrar: registrar)
+    retainedPlugins = [storage, mediaLibrary, playback, desktopLyrics]
   }
 }

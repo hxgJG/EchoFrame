@@ -58,7 +58,7 @@ class MediaArtwork extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final mediaColor = LumioTheme.mediaColor(item.kind, scheme.brightness);
+    final mediaColor = LumioTheme.mediaColor(item.kind, context);
     final placeholder = _ArtworkPlaceholder(
       item: item,
       icon: icon,
@@ -111,8 +111,11 @@ class _ArtworkPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isVideo = item.kind == MediaKind.video;
-    final mediaColor = LumioTheme.mediaColor(item.kind, scheme.brightness);
-    final depthColor = isVideo ? LumioTheme.brandBlue : LumioTheme.brandViolet;
+    final mediaColor = LumioTheme.mediaColor(item.kind, context);
+    final background = scheme.brightness == Brightness.dark
+        ? Color.alphaBlend(
+            mediaColor.withValues(alpha: 0.16), scheme.surfaceContainerLow)
+        : LumioTheme.mediaContainerColor(item.kind, context);
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
@@ -122,9 +125,11 @@ class _ArtworkPlaceholder extends StatelessWidget {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: <Color>[
-                mediaColor.withValues(alpha: 0.98),
-                mediaColor.withValues(alpha: 0.74),
-                depthColor.withValues(alpha: 0.9),
+                background,
+                Color.alphaBlend(
+                  mediaColor.withValues(alpha: 0.12),
+                  background,
+                ),
               ],
             ),
           ),
@@ -134,14 +139,14 @@ class _ArtworkPlaceholder extends StatelessWidget {
           bottom: -size * 0.18,
           child: Icon(
             isVideo ? Icons.movie_rounded : Icons.graphic_eq_rounded,
-            color: Colors.white.withValues(alpha: 0.28),
+            color: mediaColor.withValues(alpha: 0.16),
             size: size * 0.88,
           ),
         ),
         Center(
           child: Icon(
             icon ?? (isVideo ? Icons.play_arrow_rounded : Icons.album_rounded),
-            color: Colors.white,
+            color: mediaColor,
             size: size * 0.42,
           ),
         ),

@@ -10,6 +10,7 @@ import '../core/lyrics/lrc_parser.dart';
 import '../core/playback/playback_interruption_controller.dart';
 import '../platform/app_storage/app_storage_repository.dart';
 import '../platform/app_storage/platform_app_storage_repository.dart';
+import '../platform/desktop_lyrics/desktop_lyrics_controller.dart';
 import '../platform/media_library/lyrics_import.dart';
 import '../platform/media_library/media_file_operation.dart';
 import '../platform/media_library/media_library_repository.dart';
@@ -48,15 +49,19 @@ class LumioAppState extends ChangeNotifier {
     _currentItem = _audioItems.isNotEmpty ? _audioItems.first : null;
     _playbackEventSubscription =
         _playbackRepository.events.listen(_handlePlaybackEvent);
+    addListener(_syncDesktopLyrics);
+    desktopLyrics.addListener(_desktopLyricsChanged);
+    desktopLyrics.initialize();
     _restorePersistedState();
   }
 
   final MediaLibraryRepository _mediaLibraryRepository;
+  final DesktopLyricsController desktopLyrics = DesktopLyricsController();
   final AppStorageRepository _appStorageRepository;
   final PlaybackRepository _playbackRepository;
   final OnlineEnhancementRepository _onlineEnhancementRepository;
   final PlatformCapabilities _platformCapabilities;
-  final Random _random = Random(7);
+  final Random _random = Random();
   final PlaybackInterruptionController _interruptionController =
       PlaybackInterruptionController();
   late final StreamSubscription<PlaybackEvent> _playbackEventSubscription;
@@ -162,6 +167,30 @@ class LumioAppState extends ChangeNotifier {
       }
     }
     return currentIndex;
+  }
+
+  void _desktopLyricsChanged() => notifyListeners();
+
+  void _syncDesktopLyrics() {
+    if (!desktopLyrics.supported || !desktopLyrics.enabled) return;
+    final item = _currentItem;
+    final lines = item?.lyrics ?? const <LyricLine>[];
+    final index = currentLyricIndex;
+    desktopLyrics.publish(<String, Object>{
+      'audio': item == null || item.kind == MediaKind.audio,
+      'title': item?.title ?? '忆光 · 桌面歌词',
+      'playing': _isPlaying,
+      'current': item == null
+          ? '播放音乐后在这里显示歌词'
+          : lines.isEmpty
+              ? '暂无歌词，可在播放页导入 LRC'
+              : index < 0
+                  ? '等待歌词开始…'
+                  : lines[index].text,
+      'next': lines.isNotEmpty && index + 1 < lines.length
+          ? lines[index + 1].text
+          : '',
+    });
   }
 
   String get currentSubtitleText {
@@ -379,7 +408,7 @@ class LumioAppState extends ChangeNotifier {
     final index =
         current == null ? -1 : pool.indexWhere((item) => item.id == current.id);
     final nextIndex = _shuffleEnabled
-        ? _random.nextInt(pool.length)
+        ? _randomOtherIndex(pool)
         : (index + 1).clamp(0, pool.length - 1);
     play(pool[nextIndex]);
   }
@@ -403,11 +432,25 @@ class LumioAppState extends ChangeNotifier {
       return;
     }
     _shuffleEnabled = true;
-    play(pool[_random.nextInt(pool.length)]);
+    if (_repeatMode == RepeatMode.one) _repeatMode = RepeatMode.off;
+    play(pool[_randomOtherIndex(pool)]);
+  }
+
+  int _randomOtherIndex(List<MediaItem> pool) {
+    final currentIndex = pool.indexWhere((item) => item.id == _currentItem?.id);
+    if (pool.length == 1 || currentIndex < 0) {
+      return _random.nextInt(pool.length);
+    }
+    final index = _random.nextInt(pool.length - 1);
+    return index >= currentIndex ? index + 1 : index;
   }
 
   void toggleShuffle() {
     _shuffleEnabled = !_shuffleEnabled;
+    if (_shuffleEnabled && _repeatMode == RepeatMode.one) {
+      _repeatMode = RepeatMode.off;
+      _playbackRepository.setRepeatMode(_repeatMode);
+    }
     _playbackRepository.setShuffleEnabled(_shuffleEnabled);
     _saveState();
     notifyListeners();
@@ -871,6 +914,13 @@ class LumioAppState extends ChangeNotifier {
 
   void setThemeMode(ThemeMode mode) {
     _settings = _settings.copyWith(themeMode: mode);
+    _saveState();
+    notifyListeners();
+  }
+
+  void setThemeId(String id) {
+    if (_settings.themeId == id) return;
+    _settings = _settings.copyWith(themeId: id);
     _saveState();
     notifyListeners();
   }
@@ -1993,6 +2043,9 @@ class LumioAppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    removeListener(_syncDesktopLyrics);
+    desktopLyrics.removeListener(_desktopLyricsChanged);
+    desktopLyrics.dispose();
     _positionTimer?.cancel();
     _sleepTimer?.cancel();
     _sleepFadeTimer?.cancel();

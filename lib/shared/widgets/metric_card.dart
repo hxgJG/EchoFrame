@@ -26,7 +26,9 @@ class MetricCard extends StatelessWidget {
       child: Ink(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: scheme.surface,
+          color: scheme.brightness == Brightness.light
+              ? Color.alphaBlend(color.withValues(alpha: 0.05), scheme.surface)
+              : scheme.surface,
           borderRadius: BorderRadius.circular(8),
           border:
               Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'audio_selection.dart';
 
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
@@ -43,11 +44,11 @@ class PlaylistsPage extends StatelessWidget {
           ...state.playlists.map((playlist) {
             final items = state.itemsForPlaylist(playlist);
             final playlistColor = items.isEmpty
-                ? LumioTheme.audioColor(scheme.brightness)
+                ? LumioTheme.audioColor(context)
                 : items.every((item) => item.kind == MediaKind.video)
-                    ? LumioTheme.videoColor(scheme.brightness)
+                    ? LumioTheme.videoColor(context)
                     : items.every((item) => item.kind == MediaKind.audio)
-                        ? LumioTheme.audioColor(scheme.brightness)
+                        ? LumioTheme.audioColor(context)
                         : scheme.primary;
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
@@ -256,7 +257,7 @@ class _QueueCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final mediaColor = current == null
         ? scheme.primary
-        : LumioTheme.mediaColor(current!.kind, scheme.brightness);
+        : LumioTheme.mediaColor(current!.kind, context);
     final textTheme = Theme.of(context).textTheme;
     final queueItems = state.queueItems;
     final currentTitle = current?.title;
@@ -330,7 +331,7 @@ class _QueueReorderList extends StatelessWidget {
         return MediaTile(
           key: ValueKey('queue-$index-${item.id}'),
           item: item,
-          onTap: () => state.play(item),
+          onTap: () => selectAudioItem(context, state, item),
           showMeta: item.kind.name != 'video',
           trailing: _ReorderableMediaActions(
             index: index,
@@ -369,7 +370,7 @@ class _PlaylistReorderList extends StatelessWidget {
         return MediaTile(
           key: ValueKey('playlist-${playlist.id}-${item.id}'),
           item: item,
-          onTap: () => state.play(item),
+          onTap: () => selectAudioItem(context, state, item),
           showMeta: item.kind.name != 'video',
           trailing: _ReorderableMediaActions(
             index: index,

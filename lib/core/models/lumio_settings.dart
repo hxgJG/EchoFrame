@@ -12,11 +12,13 @@ enum VideoScaleMode { fit, stretch, crop }
 
 enum MusicViewMode { list, grid }
 
+// 保留已持久化的枚举名；显示名称与色值按当前品牌色板映射。
 enum ThemeAccent { blue, coral, teal, violet }
 
 class LumioSettings {
   const LumioSettings({
-    this.themeMode = ThemeMode.system,
+    this.themeMode = ThemeMode.light,
+    this.themeId = 'mint',
     this.allowOnlineEnhancement = false,
     this.defaultPlaybackView = PlaybackView.artwork,
     this.dynamicColor = false,
@@ -38,6 +40,7 @@ class LumioSettings {
   factory LumioSettings.fromJson(Map<String, Object?> json) {
     return LumioSettings(
       themeMode: _themeModeFromName(json['themeMode']?.toString()),
+      themeId: json['themeId'] is String ? json['themeId'] as String : 'mint',
       allowOnlineEnhancement: json['allowOnlineEnhancement'] == true,
       defaultPlaybackView: _playbackViewFromName(
         json['defaultPlaybackView']?.toString(),
@@ -75,6 +78,7 @@ class LumioSettings {
   }
 
   final ThemeMode themeMode;
+  final String themeId;
   final bool allowOnlineEnhancement;
   final PlaybackView defaultPlaybackView;
   final bool dynamicColor;
@@ -106,6 +110,7 @@ class LumioSettings {
 
   LumioSettings copyWith({
     ThemeMode? themeMode,
+    String? themeId,
     bool? allowOnlineEnhancement,
     PlaybackView? defaultPlaybackView,
     bool? dynamicColor,
@@ -125,6 +130,7 @@ class LumioSettings {
   }) {
     return LumioSettings(
       themeMode: themeMode ?? this.themeMode,
+      themeId: themeId ?? this.themeId,
       allowOnlineEnhancement:
           allowOnlineEnhancement ?? this.allowOnlineEnhancement,
       defaultPlaybackView: defaultPlaybackView ?? this.defaultPlaybackView,
@@ -148,6 +154,7 @@ class LumioSettings {
   Map<String, Object?> toJson() {
     return <String, Object?>{
       'themeMode': themeMode.name,
+      'themeId': themeId,
       'allowOnlineEnhancement': allowOnlineEnhancement,
       'defaultPlaybackView': defaultPlaybackView.name,
       'dynamicColor': dynamicColor,
@@ -171,7 +178,7 @@ class LumioSettings {
 ThemeMode _themeModeFromName(String? name) {
   return ThemeMode.values.firstWhere(
     (value) => value.name == name,
-    orElse: () => ThemeMode.system,
+    orElse: () => ThemeMode.light,
   );
 }
 

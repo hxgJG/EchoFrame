@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'audio_selection.dart';
 
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
@@ -36,8 +37,7 @@ class _MusicLibraryPageState extends State<MusicLibraryPage>
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
-    final scheme = Theme.of(context).colorScheme;
-    final audioColor = LumioTheme.audioColor(scheme.brightness);
+    final audioColor = LumioTheme.audioColor(context);
     return Scaffold(
       appBar: AppBar(
         title: const Text('音乐库'),
@@ -89,10 +89,11 @@ class _MusicLibraryPageState extends State<MusicLibraryPage>
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: audioColor,
-        foregroundColor: scheme.brightness == Brightness.dark
-            ? LumioTheme.night
-            : Colors.white,
+        backgroundColor: LumioTheme.mediaContainerColor(
+          MediaKind.audio,
+          context,
+        ),
+        foregroundColor: LumioTheme.onMediaColor(context),
         tooltip: '随机播放当前列表',
         onPressed: state.audioItems.isEmpty
             ? null
@@ -156,7 +157,7 @@ class _SongsTabState extends State<_SongsTab> {
   Widget build(BuildContext context) {
     final state = widget.state;
     final scheme = Theme.of(context).colorScheme;
-    final audioColor = LumioTheme.audioColor(scheme.brightness);
+    final audioColor = LumioTheme.audioColor(context);
     final items = state.audioItems;
     if (items.isEmpty) {
       return const _MusicEmptyState(
@@ -225,8 +226,9 @@ class _SongsTabState extends State<_SongsTab> {
             ),
             child: MediaTile(
               item: item,
-              onTap: () =>
-                  _isSelecting ? _toggleSelected(item.id) : state.play(item),
+              onTap: () => _isSelecting
+                  ? _toggleSelected(item.id)
+                  : selectAudioItem(context, state, item),
               trailing: _isSelecting
                   ? Checkbox(
                       value: selected,
@@ -347,7 +349,7 @@ class _SongGridCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final audioColor = LumioTheme.audioColor(scheme.brightness);
+    final audioColor = LumioTheme.audioColor(context);
     return Card(
       color: selected
           ? audioColor.withValues(
@@ -357,7 +359,9 @@ class _SongGridCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onLongPress: onToggleSelected,
-        onTap: isSelecting ? onToggleSelected : () => state.play(item),
+        onTap: isSelecting
+            ? onToggleSelected
+            : () => selectAudioItem(context, state, item),
         child: Padding(
           padding: const EdgeInsets.all(10),
           child: Column(
@@ -1020,7 +1024,7 @@ class _AudioFolderTile extends StatelessWidget {
             .map(
               (item) => MediaTile(
                 item: item,
-                onTap: () => state.play(item),
+                onTap: () => selectAudioItem(context, state, item),
                 trailing: _SongMenu(
                   state: state,
                   item: item,
@@ -1046,7 +1050,7 @@ class _MusicEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final audioColor = LumioTheme.audioColor(scheme.brightness);
+    final audioColor = LumioTheme.audioColor(context);
     final textTheme = Theme.of(context).textTheme;
     return Center(
       child: Padding(

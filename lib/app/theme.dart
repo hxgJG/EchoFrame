@@ -2,76 +2,85 @@ import 'package:flutter/material.dart';
 
 import '../core/models/lumio_settings.dart';
 import '../core/models/media_item.dart';
+import 'theme_catalog.dart';
 
 class LumioTheme {
-  static const Color brandViolet = Color(0xFF9B35FF);
-  static const Color brandBlue = Color(0xFF2A63FF);
-  static const Color brandCyan = Color(0xFF12CDEB);
-  static const Color coral = Color(0xFFFF5068);
-  static const Color audioGold = Color(0xFFFFB000);
-  static const Color audioOrange = Color(0xFFE87500);
-  static const Color videoMint = Color(0xFF18DDBE);
-  static const Color videoTeal = Color(0xFF008F7A);
-  static const Color teal = videoTeal;
-  static const Color ink = Color(0xFF14142A);
-  static const Color mist = Color(0xFFE9EAF8);
-  static const Color paper = Color(0xFFF8F8FE);
-  static const Color night = Color(0xFF07091F);
+  static const Color brandJade = Color(0xFF276B5B);
+  static const Color brandMint = Color(0xFF9ADAC6);
+  static const Color peach = Color(0xFFF3BCAD);
+  static const Color peachInk = Color(0xFF9B5141);
+  static const Color deepTeal = Color(0xFF326C66);
+  static const Color sage = Color(0xFF566C61);
 
-  static ThemeData light({ThemeAccent accent = ThemeAccent.blue}) {
-    final seedColor = accentColor(accent);
-    final scheme = ColorScheme.fromSeed(
-      seedColor: seedColor,
-      brightness: Brightness.light,
-      primary: seedColor,
-      secondary: coral,
-      tertiary: brandCyan,
-      surface: paper,
+  static ThemeData light(
+      {ThemeAccent accent = ThemeAccent.blue,
+      String themeId = LumioThemeCatalog.defaultId}) {
+    final definition = LumioThemeCatalog.resolve(themeId);
+    final scheme = definition.light.copyWith(
+      primary: accentColor(accent),
+      onPrimary: Colors.white,
+      primaryContainer: Color.alphaBlend(
+          darkAccentColor(accent).withValues(alpha: 0.5),
+          definition.light.surface),
+      onPrimaryContainer: definition.light.onSurface,
     );
-    return _theme(scheme);
+    return _theme(scheme, definition.lightMedia);
   }
 
-  static ThemeData dark({ThemeAccent accent = ThemeAccent.blue}) {
-    final seedColor = darkAccentColor(accent);
-    final scheme = ColorScheme.fromSeed(
-      seedColor: seedColor,
-      brightness: Brightness.dark,
-      primary: seedColor,
-      secondary: const Color(0xFFFF8999),
-      tertiary: const Color(0xFF58DDF0),
-      surface: const Color(0xFF101229),
+  static ThemeData dark(
+      {ThemeAccent accent = ThemeAccent.blue,
+      String themeId = LumioThemeCatalog.defaultId}) {
+    final definition = LumioThemeCatalog.resolve(themeId);
+    final seed = darkAccentColor(accent);
+    final scheme = definition.dark.copyWith(
+      primary: seed,
+      onPrimary: definition.dark.surface,
+      primaryContainer: Color.alphaBlend(
+          seed.withValues(alpha: 0.2), definition.dark.surface),
+      onPrimaryContainer: seed,
     );
-    return _theme(scheme);
+    return _theme(scheme, definition.darkMedia);
   }
 
   static Color accentColor(ThemeAccent accent) {
     return switch (accent) {
-      ThemeAccent.blue => brandBlue,
-      ThemeAccent.coral => coral,
-      ThemeAccent.teal => videoTeal,
-      ThemeAccent.violet => brandViolet,
+      ThemeAccent.blue => brandJade,
+      ThemeAccent.coral => peachInk,
+      ThemeAccent.teal => deepTeal,
+      ThemeAccent.violet => sage,
     };
   }
 
   static Color darkAccentColor(ThemeAccent accent) {
     return switch (accent) {
-      ThemeAccent.blue => const Color(0xFF8395FF),
-      ThemeAccent.coral => const Color(0xFFFF8999),
-      ThemeAccent.teal => const Color(0xFF57DFC9),
-      ThemeAccent.violet => const Color(0xFFC08CFF),
+      ThemeAccent.blue => brandMint,
+      ThemeAccent.coral => peach,
+      ThemeAccent.teal => const Color(0xFF91CEC2),
+      ThemeAccent.violet => const Color(0xFFBDCEC0),
     };
   }
 
-  static Color audioColor(Brightness brightness) =>
-      brightness == Brightness.dark ? audioGold : audioOrange;
+  static LumioMediaColors mediaColors(BuildContext context) {
+    final theme = Theme.of(context);
+    return theme.extension<LumioMediaColors>() ??
+        (theme.brightness == Brightness.dark
+            ? LumioThemeCatalog.resolve(null).darkMedia
+            : LumioThemeCatalog.resolve(null).lightMedia);
+  }
 
-  static Color videoColor(Brightness brightness) =>
-      brightness == Brightness.dark ? videoMint : videoTeal;
+  static Color audioColor(BuildContext context) => mediaColors(context).audio;
+  static Color videoColor(BuildContext context) => mediaColors(context).video;
+  static Color mediaColor(MediaKind kind, BuildContext context) =>
+      kind == MediaKind.audio ? audioColor(context) : videoColor(context);
+  static Color mediaContainerColor(MediaKind kind, BuildContext context) =>
+      kind == MediaKind.audio
+          ? mediaColors(context).audioContainer
+          : mediaColors(context).videoContainer;
+  static Color onMediaColor(BuildContext context) =>
+      mediaColors(context).onContainer;
 
-  static Color mediaColor(MediaKind kind, Brightness brightness) =>
-      kind == MediaKind.audio ? audioColor(brightness) : videoColor(brightness);
-
-  static ThemeData _theme(ColorScheme scheme) {
+  static ThemeData _theme(ColorScheme scheme, LumioMediaColors mediaColors) {
+    final isLight = scheme.brightness == Brightness.light;
     final base = ThemeData(
       colorScheme: scheme,
       useMaterial3: true,
@@ -80,6 +89,7 @@ class LumioTheme {
       visualDensity: VisualDensity.standard,
     );
     return base.copyWith(
+      extensions: <ThemeExtension<dynamic>>[mediaColors],
       appBarTheme: AppBarTheme(
         centerTitle: false,
         elevation: 0,
@@ -101,7 +111,7 @@ class LumioTheme {
       ),
       cardTheme: CardThemeData(
         elevation: 0,
-        color: scheme.surface,
+        color: isLight ? scheme.surfaceContainerLow : scheme.surface,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
@@ -116,9 +126,23 @@ class LumioTheme {
           fontWeight: FontWeight.w700,
         ),
       ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: isLight ? scheme.primaryContainer : scheme.primary,
+          foregroundColor:
+              isLight ? scheme.onPrimaryContainer : scheme.onPrimary,
+        ),
+      ),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: SegmentedButton.styleFrom(
+          foregroundColor: scheme.onSurfaceVariant,
+          selectedBackgroundColor: scheme.primaryContainer,
+          selectedForegroundColor: scheme.primary,
+        ),
+      ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
-        backgroundColor: scheme.primary,
-        foregroundColor: scheme.onPrimary,
+        backgroundColor: isLight ? scheme.primaryContainer : scheme.primary,
+        foregroundColor: isLight ? scheme.onPrimaryContainer : scheme.onPrimary,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       ),
       navigationBarTheme: NavigationBarThemeData(

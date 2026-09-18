@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../music/audio_selection.dart';
 
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
@@ -25,7 +26,6 @@ class _SearchPageState extends State<SearchPage> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final query = _controller.text;
     final results = widget.state.search(query);
     return Scaffold(
@@ -75,14 +75,14 @@ class _SearchPageState extends State<SearchPage> {
             ...results.map(
               (item) => MediaTile(
                 item: item,
-                onTap: () => widget.state.play(item),
+                onTap: () => selectAudioItem(context, widget.state, item),
                 trailing: Icon(
                   item.kind == MediaKind.audio
                       ? Icons.music_note_rounded
                       : Icons.movie_rounded,
                   color: LumioTheme.mediaColor(
                     item.kind,
-                    scheme.brightness,
+                    context,
                   ),
                 ),
               ),

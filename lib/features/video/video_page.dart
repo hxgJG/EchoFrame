@@ -36,8 +36,7 @@ class _VideoPageState extends State<VideoPage>
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
-    final scheme = Theme.of(context).colorScheme;
-    final videoColor = LumioTheme.videoColor(scheme.brightness);
+    final videoColor = LumioTheme.videoColor(context);
     return Scaffold(
       appBar: AppBar(
         title: const Text('视频库'),
@@ -442,7 +441,7 @@ class _PhaseNote extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final videoColor = LumioTheme.videoColor(scheme.brightness);
+    final videoColor = LumioTheme.videoColor(context);
     final textTheme = Theme.of(context).textTheme;
     return Container(
       padding: const EdgeInsets.all(14),

@@ -61,7 +61,7 @@ lib/platform/
 
 ## 4. 当前状态与问题定义
 
-当前仓库已经从 PRD 创建出 Flutter App，并按阶段接入 Android 媒体库异步扫描、分区持久化、扫描包含/排除文件夹、音乐/视频文件夹浏览、真实音视频播放、视频 Texture/自动 PiP、视频续播/自动连播、本地 `.srt` 字幕与样式设置、基础 `.ass/.ssa` 字幕解析、视频画面适应/拉伸/裁剪填充模式、视频全屏/横屏锁定/同步控制器/基础手势、备份恢复、本地 `.lrc` 歌词、睡眠定时器渐弱淡出、Android Equalizer 预设/自定义 EQ、文件大小排序、列表/网格切换、封面/首帧懒加载、批量媒体分享、队列/播放列表条目拖拽排序和媒体文件详情。HarmonyOS 已接入主动导入、基础音视频播放、Texture 与 Preferences 持久化。应用品牌已更新为「忆光 / Lumio」，Android/iOS/HarmonyOS 包名统一为 `com.hxg.lumio`；正式 Logo 与三端图标已落地，主题按 Logo 建立紫蓝青品牌色、音频金橙和视频青绿语义色。
+当前仓库已经从 PRD 创建出 Flutter App，并按阶段接入 Android 媒体库异步扫描、分区持久化、扫描包含/排除文件夹、音乐/视频文件夹浏览、真实音视频播放、视频 Texture/自动 PiP、视频续播/自动连播、本地 `.srt` 字幕与样式设置、基础 `.ass/.ssa` 字幕解析、视频画面适应/拉伸/裁剪填充模式、视频全屏/横屏锁定/同步控制器/基础手势、备份恢复、本地 `.lrc` 歌词、睡眠定时器渐弱淡出、Android Equalizer 预设/自定义 EQ、文件大小排序、列表/网格切换、封面/首帧懒加载、批量媒体分享、队列/播放列表条目拖拽排序和媒体文件详情。HarmonyOS 已接入主动导入、基础音视频播放、Texture 与 Preferences 持久化。应用品牌已更新为「忆光 / Lumio」，Android/iOS/HarmonyOS 包名统一为 `com.hxg.lumio`；耳机影音 Logo 与 Android/iOS/macOS/HarmonyOS 图标已同步，主题采用薄荷绿、奶白和桃粉色板，音频使用薄荷绿、视频使用桃粉语义色，详见 `docs/BRAND_GUIDE.md`。
 
 当前阶段继续按 PRD 和阶段计划推进未完成能力，并保持 Android APK 与 HarmonyOS HAP 构建可验证。
 

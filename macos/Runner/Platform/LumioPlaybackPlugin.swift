@@ -65,6 +65,15 @@ final class LumioPlaybackPlugin: NSObject, FlutterPlugin {
       updateNowPlayingPosition()
       result(nil)
     case "resume":
+      // 重启后只恢复了 Dart 歌曲信息；返回错误让现有回退流程重新加载文件。
+      guard let item = player.currentItem, item.status != .failed else {
+        result(FlutterError(
+          code: "resumeRequiresLoad",
+          message: "当前媒体尚未加载，需要重新开始播放。",
+          details: nil
+        ))
+        return
+      }
       player.playImmediately(atRate: preferredRate)
       updateNowPlayingPosition()
       result(nil)

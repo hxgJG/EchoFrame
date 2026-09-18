@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
+import '../../app/theme_catalog.dart';
 import '../../core/models/lumio_settings.dart';
 import '../../core/models/media_item.dart';
 import '../../shared/widgets/section_header.dart';
@@ -26,21 +27,42 @@ class SettingsPage extends StatelessWidget {
           _SettingsCard(
             children: <Widget>[
               ListTile(
+                leading: const Icon(Icons.style_outlined),
+                title: const Text('主题方案'),
+                subtitle: const Text('每套方案均包含日间与夜间配色'),
+                trailing: DropdownButton<String>(
+                  value: LumioThemeCatalog.resolve(state.settings.themeId).id,
+                  underline: const SizedBox.shrink(),
+                  items: LumioThemeCatalog.themes
+                      .map(
+                        (theme) => DropdownMenuItem(
+                            value: theme.id, child: Text(theme.label)),
+                      )
+                      .toList(growable: false),
+                  onChanged: (id) {
+                    if (id != null) state.setThemeId(id);
+                  },
+                ),
+              ),
+              ListTile(
                 leading: const Icon(Icons.brightness_6_rounded),
-                title: const Text('主题模式'),
+                title: const Text('明暗模式'),
                 subtitle: Text(_themeLabel(state.settings.themeMode)),
                 trailing: SegmentedButton<ThemeMode>(
                   segments: const <ButtonSegment<ThemeMode>>[
                     ButtonSegment(
                       value: ThemeMode.system,
+                      tooltip: '跟随系统',
                       icon: Icon(Icons.phone_android_rounded),
                     ),
                     ButtonSegment(
                       value: ThemeMode.light,
+                      tooltip: '日间模式',
                       icon: Icon(Icons.light_mode_rounded),
                     ),
                     ButtonSegment(
                       value: ThemeMode.dark,
+                      tooltip: '夜间模式',
                       icon: Icon(Icons.dark_mode_rounded),
                     ),
                   ],
@@ -70,7 +92,9 @@ class SettingsPage extends StatelessWidget {
                           value: accent,
                           icon: Icon(
                             Icons.circle,
-                            color: LumioTheme.accentColor(accent),
+                            color: scheme.brightness == Brightness.dark
+                                ? LumioTheme.darkAccentColor(accent)
+                                : LumioTheme.accentColor(accent),
                           ),
                         ),
                       )
@@ -82,6 +106,37 @@ class SettingsPage extends StatelessWidget {
               ),
             ],
           ),
+          if (state.desktopLyrics.supported) ...<Widget>[
+            const SectionHeader(title: '桌面歌词'),
+            _SettingsCard(children: <Widget>[
+              SwitchListTile(
+                secondary: const Icon(Icons.lyrics_outlined),
+                title: const Text('显示桌面歌词'),
+                subtitle: Text(state.desktopLyrics.error ??
+                    'macOS 置顶显示当前句和下一句，最小化主窗口后仍可查看。'),
+                value: state.desktopLyrics.enabled,
+                onChanged: state.desktopLyrics.setEnabled,
+              ),
+              SwitchListTile(
+                secondary: const Icon(Icons.lock_outline_rounded),
+                title: const Text('锁定桌面歌词'),
+                subtitle: const Text('锁定后鼠标穿透；可从此处或“显示”菜单解锁。'),
+                value: state.desktopLyrics.locked,
+                onChanged: state.desktopLyrics.enabled
+                    ? state.desktopLyrics.setLocked
+                    : null,
+              ),
+              ListTile(
+                leading: const Icon(Icons.center_focus_strong_rounded),
+                title: const Text('重置歌词窗口位置'),
+                subtitle: const Text('恢复到主屏幕底部，并解除锁定。'),
+                enabled: state.desktopLyrics.enabled,
+                onTap: state.desktopLyrics.enabled
+                    ? state.desktopLyrics.resetPosition
+                    : null,
+              ),
+            ]),
+          ],
           const SectionHeader(title: '播放页'),
           _SettingsCard(
             children: <Widget>[
@@ -625,17 +680,17 @@ class SettingsPage extends StatelessWidget {
   String _themeLabel(ThemeMode mode) {
     return switch (mode) {
       ThemeMode.system => '跟随系统',
-      ThemeMode.light => '浅色',
-      ThemeMode.dark => '深色',
+      ThemeMode.light => '日间 · 浅色',
+      ThemeMode.dark => '夜间 · 深色',
     };
   }
 
   String _themeAccentLabel(ThemeAccent accent) {
     return switch (accent) {
-      ThemeAccent.blue => '品牌蓝',
-      ThemeAccent.coral => '珊瑚红',
-      ThemeAccent.teal => '青绿色',
-      ThemeAccent.violet => '柔紫色',
+      ThemeAccent.blue => '薄荷绿',
+      ThemeAccent.coral => '柔桃粉',
+      ThemeAccent.teal => '深青绿',
+      ThemeAccent.violet => '鼠尾草',
     };
   }
 

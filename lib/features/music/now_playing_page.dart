@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -80,97 +81,180 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
           ),
         ],
       ),
-      body: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onPanUpdate: isVideo
-            ? null
-            : (details) {
-                _dragDelta += details.delta;
-              },
-        onPanEnd: isVideo
-            ? null
-            : (_) {
-                final action = resolvePlaybackPageGesture(
-                  deltaX: _dragDelta.dx,
-                  deltaY: _dragDelta.dy,
-                );
+      body: defaultTargetPlatform == TargetPlatform.macOS && !isVideo
+          ? _MacMusicDetails(state: state, item: item)
+          : GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onPanUpdate: isVideo
+                  ? null
+                  : (details) {
+                      _dragDelta += details.delta;
+                    },
+              onPanEnd: isVideo
+                  ? null
+                  : (_) {
+                      final action = resolvePlaybackPageGesture(
+                        deltaX: _dragDelta.dx,
+                        deltaY: _dragDelta.dy,
+                      );
+                      _dragDelta = Offset.zero;
+                      switch (action) {
+                        case PlaybackPageGestureAction.none:
+                          break;
+                        case PlaybackPageGestureAction.toggleView:
+                          state.togglePlaybackView();
+                        case PlaybackPageGestureAction.dismiss:
+                          Navigator.of(context).maybePop();
+                      }
+                    },
+              onPanCancel: () {
                 _dragDelta = Offset.zero;
-                switch (action) {
-                  case PlaybackPageGestureAction.none:
-                    break;
-                  case PlaybackPageGestureAction.toggleView:
-                    state.togglePlaybackView();
-                  case PlaybackPageGestureAction.dismiss:
-                    Navigator.of(context).maybePop();
-                }
               },
-        onPanCancel: () {
-          _dragDelta = Offset.zero;
-        },
-        child: NotificationListener<ScrollNotification>(
-          onNotification: (notification) {
-            if (notification is OverscrollNotification &&
-                notification.overscroll < 0) {
-              _dismissOverscroll -= notification.overscroll;
-              if (_dismissOverscroll >= 72) {
-                _dismissOverscroll = 0;
-                Navigator.of(context).maybePop();
-              }
-            } else if (notification is ScrollEndNotification) {
-              _dismissOverscroll = 0;
-            }
-            return false;
-          },
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
-            children: <Widget>[
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                child: isVideo || state.playbackView == PlaybackView.video
-                    ? _VideoStage(
-                        state: state,
-                        item: item,
-                        textureId: state.videoTextureId,
-                        subtitleText: state.currentSubtitleText,
-                      )
-                    : state.playbackView == PlaybackView.lyrics
-                        ? _LyricsStage(state: state, item: item)
-                        : _ArtworkStage(item: item),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                item.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: Theme.of(
-                  context,
-                )
-                    .textTheme
-                    .headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                isVideo ? item.subtitle : item.artist,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w700,
+              child: NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  if (notification is OverscrollNotification &&
+                      notification.overscroll < 0) {
+                    _dismissOverscroll -= notification.overscroll;
+                    if (_dismissOverscroll >= 72) {
+                      _dismissOverscroll = 0;
+                      Navigator.of(context).maybePop();
+                    }
+                  } else if (notification is ScrollEndNotification) {
+                    _dismissOverscroll = 0;
+                  }
+                  return false;
+                },
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
+                  children: <Widget>[
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      child: isVideo || state.playbackView == PlaybackView.video
+                          ? _VideoStage(
+                              state: state,
+                              item: item,
+                              textureId: state.videoTextureId,
+                              subtitleText: state.currentSubtitleText,
+                            )
+                          : state.playbackView == PlaybackView.lyrics
+                              ? _LyricsStage(state: state, item: item)
+                              : _ArtworkStage(item: item),
                     ),
+                    const SizedBox(height: 24),
+                    Text(
+                      item.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(
+                        context,
+                      )
+                          .textTheme
+                          .headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isVideo ? item.subtitle : item.artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 24),
+                    _ProgressControl(state: state, item: item),
+                    const SizedBox(height: 16),
+                    _PrimaryControls(state: state),
+                    const SizedBox(height: 18),
+                    _ToolRow(state: state, item: item),
+                  ],
+                ),
               ),
-              const SizedBox(height: 24),
-              _ProgressControl(state: state, item: item),
-              const SizedBox(height: 16),
-              _PrimaryControls(state: state),
-              const SizedBox(height: 18),
-              _ToolRow(state: state, item: item),
-            ],
+            ),
+    );
+  }
+}
+
+class _MacMusicDetails extends StatelessWidget {
+  const _MacMusicDetails({required this.state, required this.item});
+
+  final LumioAppState state;
+  final MediaItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 桌面窗口同时限制舞台的宽高，避免正方形封面把播放控制挤出视口。
+        final stageHeight = (constraints.maxHeight - 64).clamp(180.0, 420.0);
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1080),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(32),
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: SizedBox(
+                      height: stageHeight,
+                      child: Center(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 220),
+                          child: state.playbackView == PlaybackView.lyrics
+                              ? _LyricsStage(
+                                  state: state,
+                                  item: item,
+                                  height: stageHeight,
+                                )
+                              : _ArtworkStage(item: item),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 48),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          item.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          item.artist,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+                        _ProgressControl(state: state, item: item),
+                        const SizedBox(height: 16),
+                        _PrimaryControls(state: state),
+                        const SizedBox(height: 18),
+                        _ToolRow(state: state, item: item),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -192,10 +276,12 @@ class _ArtworkStage extends StatelessWidget {
 }
 
 class _LyricsStage extends StatefulWidget {
-  const _LyricsStage({required this.state, required this.item});
+  const _LyricsStage(
+      {required this.state, required this.item, this.height = 320});
 
   final LumioAppState state;
   final MediaItem item;
+  final double height;
 
   @override
   State<_LyricsStage> createState() => _LyricsStageState();
@@ -204,18 +290,25 @@ class _LyricsStage extends StatefulWidget {
 class _LyricsStageState extends State<_LyricsStage> {
   static const double _lineExtent = 52;
   final ScrollController _scrollController = ScrollController();
+  late int _lastLyricIndex;
 
   @override
   void initState() {
     super.initState();
+    _lastLyricIndex = widget.state.currentLyricIndex;
     _scheduleCurrentLine();
   }
 
   @override
   void didUpdateWidget(covariant _LyricsStage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.state.currentLyricIndex != widget.state.currentLyricIndex ||
-        oldWidget.item.id != widget.item.id) {
+    // 两个 widget 共享可变的 AppState，必须保存行号快照才能检测进度变化。
+    final currentIndex = widget.state.currentLyricIndex;
+    if (_lastLyricIndex != currentIndex ||
+        oldWidget.item.id != widget.item.id ||
+        oldWidget.item.lyrics != widget.item.lyrics ||
+        oldWidget.height != widget.height) {
+      _lastLyricIndex = currentIndex;
       _scheduleCurrentLine();
     }
   }
@@ -231,10 +324,9 @@ class _LyricsStageState extends State<_LyricsStage> {
       if (!mounted) {
         return;
       }
-      final index = widget.state.currentLyricIndex;
-      if (index < 0 ||
-          index >= widget.item.lyrics.length ||
-          !_scrollController.hasClients) {
+      final currentIndex = widget.state.currentLyricIndex;
+      final index = currentIndex < 0 ? 0 : currentIndex;
+      if (index >= widget.item.lyrics.length || !_scrollController.hasClients) {
         return;
       }
       final target = (index * _lineExtent -
@@ -252,13 +344,13 @@ class _LyricsStageState extends State<_LyricsStage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final audioColor = LumioTheme.audioColor(scheme.brightness);
+    final audioColor = LumioTheme.audioColor(context);
     final textTheme = Theme.of(context).textTheme;
     final lines = widget.item.lyrics;
     final currentIndex = widget.state.currentLyricIndex;
     return Container(
       key: const ValueKey<String>('lyrics'),
-      height: 320,
+      height: widget.height,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
       decoration: BoxDecoration(
         color: scheme.surface,
@@ -335,8 +427,7 @@ class _VideoStage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final videoColor = LumioTheme.videoColor(scheme.brightness);
+    final videoColor = LumioTheme.videoColor(context);
     return AspectRatio(
       aspectRatio: 16 / 9,
       child: Container(
@@ -389,8 +480,8 @@ class _VideoStage extends StatelessWidget {
                 ),
                 child: Text(
                   '${item.formatLabel ?? '视频'} • ${item.resolution ?? '自动'}',
-                  style: TextStyle(
-                    color: scheme.onPrimary,
+                  style: const TextStyle(
+                    color: Colors.white,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -884,7 +975,7 @@ class _ProgressControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final mediaColor = LumioTheme.mediaColor(item.kind, scheme.brightness);
+    final mediaColor = LumioTheme.mediaColor(item.kind, context);
     final fraction = item.duration.inMilliseconds == 0
         ? 0.0
         : state.position.inMilliseconds / item.duration.inMilliseconds;
@@ -924,7 +1015,7 @@ class _PrimaryControls extends StatelessWidget {
     final current = state.currentItem;
     final mediaColor = current == null
         ? scheme.primary
-        : LumioTheme.mediaColor(current.kind, scheme.brightness);
+        : LumioTheme.mediaColor(current.kind, context);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: <Widget>[
@@ -945,11 +1036,12 @@ class _PrimaryControls extends StatelessWidget {
         ),
         FilledButton(
           style: FilledButton.styleFrom(
-            backgroundColor: mediaColor,
-            foregroundColor: scheme.brightness == Brightness.dark &&
-                    current?.kind == MediaKind.audio
-                ? LumioTheme.night
-                : Colors.white,
+            backgroundColor: current == null
+                ? scheme.brightness == Brightness.light
+                    ? scheme.primaryContainer
+                    : scheme.primary
+                : LumioTheme.mediaContainerColor(current.kind, context),
+            foregroundColor: LumioTheme.onMediaColor(context),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(24),
             ),
@@ -967,7 +1059,13 @@ class _PrimaryControls extends StatelessWidget {
           icon: const Icon(Icons.skip_next_rounded, size: 34),
         ),
         IconButton(
-          tooltip: '随机',
+          tooltip: state.shuffleEnabled ? '关闭随机播放' : '开启随机播放',
+          isSelected: state.shuffleEnabled,
+          style: IconButton.styleFrom(
+            backgroundColor:
+                state.shuffleEnabled ? scheme.primaryContainer : null,
+            foregroundColor: state.shuffleEnabled ? mediaColor : null,
+          ),
           onPressed: state.toggleShuffle,
           icon: Icon(
             Icons.shuffle_rounded,
@@ -988,8 +1086,7 @@ class _ToolRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isVideo = item.kind == MediaKind.video;
-    final scheme = Theme.of(context).colorScheme;
-    final mediaColor = LumioTheme.mediaColor(item.kind, scheme.brightness);
+    final mediaColor = LumioTheme.mediaColor(item.kind, context);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: <Widget>[

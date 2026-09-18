@@ -30,10 +30,25 @@ class LumioApp extends StatelessWidget {
       builder: (context, _) {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: LumioTheme.light(accent: state.settings.themeAccent),
-          darkTheme: LumioTheme.dark(accent: state.settings.themeAccent),
+          theme: LumioTheme.light(
+              accent: state.settings.themeAccent,
+              themeId: state.settings.themeId),
+          darkTheme: LumioTheme.dark(
+              accent: state.settings.themeAccent,
+              themeId: state.settings.themeId),
           themeMode: state.settings.themeMode,
           title: '忆光',
+          builder: (context, child) {
+            final scheme = Theme.of(context).colorScheme;
+            state.desktopLyrics.setAppearance({
+              'backgroundColor': scheme.surfaceContainerLow.toARGB32(),
+              'foregroundColor': LumioTheme.audioColor(context).toARGB32(),
+              'secondaryColor': scheme.onSurfaceVariant.toARGB32(),
+              'borderColor': scheme.outlineVariant.toARGB32(),
+              'dark': scheme.brightness == Brightness.dark,
+            });
+            return child!;
+          },
           home: LumioShell(state: state),
         );
       },
@@ -200,6 +215,18 @@ class LumioShell extends StatelessWidget {
           label: '显示',
           menus: <PlatformMenuItem>[
             PlatformMenuItem(
+              label: state.desktopLyrics.enabled ? '关闭桌面歌词' : '开启桌面歌词',
+              onSelected: () =>
+                  state.desktopLyrics.setEnabled(!state.desktopLyrics.enabled),
+            ),
+            PlatformMenuItem(
+              label: state.desktopLyrics.locked ? '解锁桌面歌词' : '锁定桌面歌词',
+              onSelected: state.desktopLyrics.enabled
+                  ? () =>
+                      state.desktopLyrics.setLocked(!state.desktopLyrics.locked)
+                  : null,
+            ),
+            PlatformMenuItem(
               label: '跟随系统外观',
               onSelected: () => state.setThemeMode(ThemeMode.system),
             ),
@@ -208,7 +235,7 @@ class LumioShell extends StatelessWidget {
               onSelected: () => state.setThemeMode(ThemeMode.light),
             ),
             PlatformMenuItem(
-              label: '深色外观',
+              label: '夜间模式',
               onSelected: () => state.setThemeMode(ThemeMode.dark),
             ),
             const PlatformProvidedMenuItem(
@@ -321,9 +348,9 @@ class _MediaShelf extends StatelessWidget {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: <Color>[
-                    LumioTheme.brandViolet,
-                    LumioTheme.brandBlue,
-                    LumioTheme.brandCyan,
+                    LumioTheme.brandMint,
+                    LumioTheme.brandJade,
+                    LumioTheme.peach,
                   ],
                 ),
               ),
@@ -337,21 +364,15 @@ class _MediaShelf extends StatelessWidget {
                 children: <Widget>[
                   Row(
                     children: <Widget>[
-                      Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: <Color>[
-                              LumioTheme.brandViolet,
-                              LumioTheme.brandBlue,
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.graphic_eq_rounded,
-                          color: Colors.white,
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Image.asset(
+                          'assets/branding/lumio_logo_128.png',
+                          width: 38,
+                          height: 38,
+                          cacheWidth: 114,
+                          cacheHeight: 114,
+                          filterQuality: FilterQuality.medium,
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -467,13 +488,12 @@ class _CompactShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final brightness = Theme.of(context).brightness;
     final navigationColor = switch (state.section) {
       AppSection.home ||
       AppSection.music ||
       AppSection.playlists =>
-        LumioTheme.audioColor(brightness),
-      AppSection.video => LumioTheme.videoColor(brightness),
+        LumioTheme.audioColor(context),
+      AppSection.video => LumioTheme.videoColor(context),
       AppSection.settings => scheme.primary,
     };
     return Scaffold(
@@ -485,7 +505,7 @@ class _CompactShell extends StatelessWidget {
           NavigationBarTheme(
             data: NavigationBarThemeData(
               indicatorColor: navigationColor.withValues(
-                alpha: brightness == Brightness.dark ? 0.24 : 0.14,
+                alpha: scheme.brightness == Brightness.dark ? 0.24 : 0.14,
               ),
             ),
             child: NavigationBar(
