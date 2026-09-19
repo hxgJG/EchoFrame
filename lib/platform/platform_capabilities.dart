@@ -2,6 +2,9 @@ import 'dart:io' show Platform;
 
 class PlatformCapabilities {
   const PlatformCapabilities({
+    this.supportsSubtitlePreview = false,
+    this.supportsSubtitleEditing = false,
+    this.supportsSubtitleExport = false,
     required this.supportsFolderPicker,
     required this.supportsPersistentFolderAccess,
     required this.supportsFileRename,
@@ -19,6 +22,9 @@ class PlatformCapabilities {
   factory PlatformCapabilities.current() {
     if (Platform.isMacOS) {
       return const PlatformCapabilities(
+        supportsSubtitlePreview: true,
+        supportsSubtitleEditing: true,
+        supportsSubtitleExport: true,
         supportsFolderPicker: true,
         supportsPersistentFolderAccess: true,
         supportsFileRename: true,
@@ -66,6 +72,9 @@ class PlatformCapabilities {
   }
 
   final bool supportsFolderPicker;
+  final bool supportsSubtitlePreview;
+  final bool supportsSubtitleEditing;
+  final bool supportsSubtitleExport;
   final bool supportsPersistentFolderAccess;
   final bool supportsFileRename;
   final bool supportsFileMove;

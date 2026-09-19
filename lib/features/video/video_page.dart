@@ -4,6 +4,7 @@ import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../core/models/media_item.dart';
 import '../music/now_playing_page.dart';
+import '../subtitle_workbench/subtitle_workbench_page.dart';
 import '../search/search_page.dart';
 import '../../shared/widgets/media_tile.dart';
 import '../../shared/widgets/section_header.dart';
@@ -41,6 +42,11 @@ class _VideoPageState extends State<VideoPage>
       appBar: AppBar(
         title: const Text('视频库'),
         actions: <Widget>[
+          if (state.platformCapabilities.supportsSubtitleEditing)
+            IconButton(
+                tooltip: '字幕工作台',
+                onPressed: () => openSubtitleWorkbench(context, state),
+                icon: const Icon(Icons.subtitles_outlined)),
           IconButton(
             tooltip: '搜索',
             onPressed: () => _openSearch(context, state),
@@ -130,17 +136,21 @@ class _VideoMenu extends StatelessWidget {
     return PopupMenuButton<String>(
       tooltip: '更多',
       icon: const Icon(Icons.more_vert_rounded),
-      itemBuilder: (context) => const <PopupMenuEntry<String>>[
-        PopupMenuItem(value: 'play', child: Text('播放')),
-        PopupMenuItem(value: 'share', child: Text('分享')),
-        PopupMenuItem(value: 'edit', child: Text('编辑信息')),
-        PopupMenuItem(value: 'renameFile', child: Text('重命名文件')),
-        PopupMenuItem(value: 'moveFile', child: Text('移动文件')),
-        PopupMenuItem(value: 'deleteFile', child: Text('从媒体库移除')),
-        PopupMenuItem(value: 'detail', child: Text('详情')),
+      itemBuilder: (context) => <PopupMenuEntry<String>>[
+        if (state.platformCapabilities.supportsSubtitleEditing)
+          const PopupMenuItem(value: 'subtitles', child: Text('编辑 / 制作字幕')),
+        const PopupMenuItem(value: 'play', child: Text('播放')),
+        const PopupMenuItem(value: 'share', child: Text('分享')),
+        const PopupMenuItem(value: 'edit', child: Text('编辑信息')),
+        const PopupMenuItem(value: 'renameFile', child: Text('重命名文件')),
+        const PopupMenuItem(value: 'moveFile', child: Text('移动文件')),
+        const PopupMenuItem(value: 'deleteFile', child: Text('从媒体库移除')),
+        const PopupMenuItem(value: 'detail', child: Text('详情')),
       ],
       onSelected: (value) {
         switch (value) {
+          case 'subtitles':
+            openSubtitleWorkbench(context, state, item: item);
           case 'play':
             onPlay();
           case 'share':
@@ -166,6 +176,8 @@ Future<void> _renameVideoFile(
   LumioAppState state,
   MediaItem item,
 ) async {
+  if (!await _confirmVideoRelocation(context, state) || !context.mounted)
+    return;
   final name = await _showVideoFileInput(
     context,
     title: '重命名文件',
@@ -188,6 +200,8 @@ Future<void> _moveVideoFile(
   LumioAppState state,
   MediaItem item,
 ) async {
+  if (!await _confirmVideoRelocation(context, state) || !context.mounted)
+    return;
   final path = await _showVideoFileInput(
     context,
     title: '移动文件',
@@ -203,6 +217,26 @@ Future<void> _moveVideoFile(
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(result.message)));
   }
+}
+
+Future<bool> _confirmVideoRelocation(
+    BuildContext context, LumioAppState state) async {
+  if (!state.platformCapabilities.supportsSubtitleEditing) return true;
+  return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+                  title: const Text('视频路径将改变'),
+                  content: const Text(
+                      '已有字幕项目会保留，但可能需要重新选择视频，且无法继续应用到原媒体库条目。媒体库中的自定义字幕不保证随改名或移动保留；请先在设置中创建备份。'),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('取消，先备份')),
+                    FilledButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('继续'))
+                  ])) ??
+      false;
 }
 
 Future<void> _deleteVideoFile(

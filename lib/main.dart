@@ -12,6 +12,7 @@ import 'features/music/lyric_calibration_dialog.dart';
 import 'features/music/playlists_page.dart';
 import 'features/settings/settings_page.dart';
 import 'features/video/video_page.dart';
+import 'features/subtitle_workbench/subtitle_workbench_page.dart';
 import 'shared/widgets/mini_player.dart';
 import 'shared/widgets/mobile_player_shell.dart';
 
@@ -211,6 +212,9 @@ class LumioShell extends StatelessWidget {
         PlatformMenu(
           label: '文件',
           menus: <PlatformMenuItem>[
+            PlatformMenuItem(
+                label: '字幕工作台…',
+                onSelected: () => openSubtitleWorkbench(context, state)),
             PlatformMenuItem(
               label: '添加媒体文件夹…',
               shortcut: const SingleActivator(
@@ -437,6 +441,11 @@ class _MediaShelf extends StatelessWidget {
                       selected: state.section == destination.section,
                       onTap: () => state.selectSection(destination.section),
                     ),
+                  if (state.platformCapabilities.supportsSubtitleEditing)
+                    ListTile(
+                        leading: const Icon(Icons.subtitles_outlined),
+                        title: const Text('字幕工作台'),
+                        onTap: () => openSubtitleWorkbench(context, state)),
                   const Spacer(),
                   if (state.mediaSources.isEmpty &&
                       state.platformCapabilities.supportsFolderPicker)

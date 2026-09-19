@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../subtitle_workbench/subtitle_workbench_page.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/app_state.dart';
@@ -530,15 +531,18 @@ class _VideoStage extends StatelessWidget {
                 icon: const Icon(Icons.fullscreen_rounded),
               ),
             ),
-            if (subtitleText.isNotEmpty)
+            if (state.platformCapabilities.supportsSubtitleEditing ||
+                subtitleText.isNotEmpty)
               Positioned(
                 left: 16,
                 right: 16,
                 bottom: _subtitleBottom(state.settings.subtitlePosition, false),
-                child: _SubtitleOverlayText(
-                  text: subtitleText,
-                  settings: state.settings,
-                ),
+                child: state.platformCapabilities.supportsSubtitleEditing
+                    ? _DesktopSubtitleOverlay(state: state)
+                    : _SubtitleOverlayText(
+                        text: subtitleText,
+                        settings: state.settings,
+                      ),
               ),
           ],
         ),
@@ -717,7 +721,8 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
                     scaleMode: state.settings.videoScaleMode,
                     aspectRatio: _videoAspectRatio(item),
                   ),
-                if (state.currentSubtitleText.isNotEmpty)
+                if (state.platformCapabilities.supportsSubtitleEditing ||
+                    state.currentSubtitleText.isNotEmpty)
                   Positioned(
                     left: 24,
                     right: 24,
@@ -726,10 +731,12 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
                           true,
                         ) -
                         (_controlsVisible ? 0 : 72),
-                    child: _SubtitleOverlayText(
-                      text: state.currentSubtitleText,
-                      settings: state.settings,
-                    ),
+                    child: state.platformCapabilities.supportsSubtitleEditing
+                        ? _DesktopSubtitleOverlay(state: state)
+                        : _SubtitleOverlayText(
+                            text: state.currentSubtitleText,
+                            settings: state.settings,
+                          ),
                   ),
                 Positioned(
                   left: 8,
@@ -816,18 +823,39 @@ class _VideoTextureView extends StatelessWidget {
   }
 }
 
+class _DesktopSubtitleOverlay extends StatelessWidget {
+  const _DesktopSubtitleOverlay({required this.state});
+  final LumioAppState state;
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+        valueListenable: state.subtitleChanges,
+        builder: (_, __, ___) {
+          final text = state.currentSubtitleText;
+          if (text.isEmpty) return const SizedBox.shrink();
+          return ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 160),
+              child: SingleChildScrollView(
+                  child: _SubtitleOverlayText(
+                      text: text, settings: state.settings, maxLines: null)));
+        },
+      );
+}
+
 class _SubtitleOverlayText extends StatelessWidget {
-  const _SubtitleOverlayText({required this.text, required this.settings});
+  const _SubtitleOverlayText(
+      {required this.text, required this.settings, this.maxLines = 3});
 
   final String text;
   final LumioSettings settings;
+  final int? maxLines;
 
   @override
   Widget build(BuildContext context) {
     return Text(
       text,
-      maxLines: 3,
-      overflow: TextOverflow.ellipsis,
+      maxLines: maxLines,
+      overflow: maxLines == null ? TextOverflow.clip : TextOverflow.ellipsis,
       textAlign: TextAlign.center,
       style: TextStyle(
         color: _subtitleColor(settings.subtitleTextColor),
@@ -1180,6 +1208,36 @@ void _showMoreActions(BuildContext context, LumioAppState state) {
                           LyricAuthoringPage(state: state, item: item)));
                 },
               ),
+            if (state.currentItem?.kind == MediaKind.video &&
+                state.platformCapabilities.supportsSubtitleEditing) ...[
+              ListTile(
+                  leading: const Icon(Icons.subtitles_outlined),
+                  title: const Text('编辑 / 校准字幕'),
+                  subtitle: const Text('打开独立字幕工作台，也可导出带字幕视频'),
+                  onTap: () {
+                    final item = state.currentItem!;
+                    Navigator.pop(context);
+                    openSubtitleWorkbench(pageContext, state, item: item);
+                  }),
+              ListTile(
+                  leading: const Icon(Icons.closed_caption),
+                  title: Text(
+                      state.currentItem!.subtitleState['visible'] == false
+                          ? '显示字幕'
+                          : '隐藏字幕'),
+                  onTap: () async {
+                    final item = state.currentItem!;
+                    Navigator.pop(context);
+                    try {
+                      await state.setVideoSubtitlesVisible(
+                          item.id, item.subtitleState['visible'] == false);
+                    } catch (e) {
+                      if (pageContext.mounted)
+                        ScaffoldMessenger.of(pageContext)
+                            .showSnackBar(SnackBar(content: Text('$e')));
+                    }
+                  }),
+            ],
             ListTile(
               leading: const Icon(Icons.looks_one_rounded),
               title: const Text('设置 A 点'),

@@ -21,6 +21,10 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		D40000112026091900000001 /* LumioSubtitleRenderDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000012026091900000001 /* LumioSubtitleRenderDocument.swift */; };
+		D40000122026091900000002 /* LumioSubtitleVideoComposition.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000022026091900000002 /* LumioSubtitleVideoComposition.swift */; };
+		D40000132026091900000003 /* LumioSubtitleVideoExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000032026091900000003 /* LumioSubtitleVideoExporter.swift */; };
+		D40000142026091900000004 /* LumioSubtitleWorkbenchPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000042026091900000004 /* LumioSubtitleWorkbenchPlugin.swift */; };
 		B20000112026091800000001 /* LumioDesktopLyricsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000012026091800000001 /* LumioDesktopLyricsPlugin.swift */; };
 		331C80D8294CF71000263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C80D7294CF71000263BE5 /* RunnerTests.swift */; };
 		335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */; };
@@ -70,6 +74,10 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D40000012026091900000001 /* LumioSubtitleRenderDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LumioSubtitleRenderDocument.swift; sourceTree = "<group>"; };
+		D40000022026091900000002 /* LumioSubtitleVideoComposition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LumioSubtitleVideoComposition.swift; sourceTree = "<group>"; };
+		D40000032026091900000003 /* LumioSubtitleVideoExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LumioSubtitleVideoExporter.swift; sourceTree = "<group>"; };
+		D40000042026091900000004 /* LumioSubtitleWorkbenchPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LumioSubtitleWorkbenchPlugin.swift; sourceTree = "<group>"; };
 		B20000012026091800000001 /* LumioDesktopLyricsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LumioDesktopLyricsPlugin.swift; sourceTree = "<group>"; };
 		10393C525DB88167136AE121 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
 		32D6902EFE7189F3207D193B /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -207,6 +215,10 @@
 			children = (
 				A10000012026080300000001 /* LumioMacOSPlugins.swift */,
 				B20000012026091800000001 /* LumioDesktopLyricsPlugin.swift */,
+				D40000012026091900000001 /* LumioSubtitleRenderDocument.swift */,
+				D40000022026091900000002 /* LumioSubtitleVideoComposition.swift */,
+				D40000032026091900000003 /* LumioSubtitleVideoExporter.swift */,
+				D40000042026091900000004 /* LumioSubtitleWorkbenchPlugin.swift */,
 				A10000022026080300000002 /* SecurityScopedBookmarkStore.swift */,
 				A10000032026080300000003 /* LumioAppStoragePlugin.swift */,
 				C30000032026091900000001 /* LumioMetadataRepair.swift */,
@@ -471,6 +483,10 @@
 			files = (
 				A10000112026080300000001 /* LumioMacOSPlugins.swift in Sources */,
 				B20000112026091800000001 /* LumioDesktopLyricsPlugin.swift in Sources */,
+				D40000112026091900000001 /* LumioSubtitleRenderDocument.swift in Sources */,
+				D40000122026091900000002 /* LumioSubtitleVideoComposition.swift in Sources */,
+				D40000132026091900000003 /* LumioSubtitleVideoExporter.swift in Sources */,
+				D40000142026091900000004 /* LumioSubtitleWorkbenchPlugin.swift in Sources */,
 				A10000122026080300000002 /* SecurityScopedBookmarkStore.swift in Sources */,
 				A10000132026080300000003 /* LumioAppStoragePlugin.swift in Sources */,
 				C30000132026091900000001 /* LumioMetadataRepair.swift in Sources */,

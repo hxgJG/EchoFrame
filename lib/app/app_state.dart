@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:flutter/foundation.dart' show compute;
 import '../core/models/lumio_settings.dart';
 import '../core/models/media_item.dart';
 import '../core/models/playlist.dart';
+import '../core/subtitles/subtitle_project.dart';
 import '../core/lyrics/lrc_parser.dart';
 import '../core/lyrics/lyric_calibration.dart';
 import '../core/lyrics/lyric_draft.dart';
@@ -23,6 +25,7 @@ import '../platform/media_library/platform_media_library_repository.dart';
 import '../platform/media_library/media_visibility.dart';
 import '../platform/online_enhancement/online_enhancement_repository.dart';
 import '../platform/platform_capabilities.dart';
+import '../platform/subtitle_workbench/subtitle_workbench_repository.dart';
 import '../platform/playback/playback_repository.dart';
 import '../platform/playback/platform_playback_repository.dart';
 import 'seed_data.dart';
@@ -83,6 +86,9 @@ class LumioAppState extends ChangeNotifier {
   int _lyricViewCount = 0;
   LyricCalibration? _lyricCalibration;
   final ValueNotifier<int> lyricChanges = ValueNotifier(0);
+  final ValueNotifier<int> subtitleChanges = ValueNotifier(0);
+  List<SubtitleCue>? _subtitleIndexSource;
+  SubtitleTimeline? _subtitleTimeline;
   Timer? _sleepTimer;
   Timer? _sleepFadeTimer;
   List<MediaItem> _audioItems;
@@ -472,13 +478,18 @@ class LumioAppState extends ChangeNotifier {
     if (draft != null && !isLyricCalibrationValid(draft)) {
       _lyricCalibration = null;
     }
-    final active = _isPlaying &&
+    final audioActive = _isPlaying &&
         _currentItem?.kind == MediaKind.audio &&
         (_authoringViews > 0 ||
             ((_currentItem?.lyrics.isNotEmpty ?? false) &&
                 (_lyricViewCount > 0 ||
                     desktopLyrics.enabled ||
                     _lyricCalibration != null)));
+    final videoActive = _isPlaying &&
+        platformCapabilities.supportsSubtitleEditing &&
+        _currentItem?.kind == MediaKind.video &&
+        (_currentItem?.subtitles.isNotEmpty ?? false);
+    final active = audioActive || videoActive;
     if (active && _lyricTimer == null) {
       _lyricTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
         _syncPlaybackPosition(lyricsOnly: true);
@@ -520,6 +531,21 @@ class LumioAppState extends ChangeNotifier {
         item.kind != MediaKind.video ||
         item.subtitles.isEmpty) {
       return '';
+    }
+    if (platformCapabilities.supportsSubtitleEditing) {
+      if (item.subtitleState['visible'] == false) return '';
+      if (!identical(_subtitleIndexSource, item.subtitles)) {
+        _subtitleIndexSource = item.subtitles;
+        _subtitleTimeline = SubtitleTimeline([
+          for (var i = 0; i < item.subtitles.length; i++)
+            EditableSubtitle(
+                id: '$i',
+                startMs: item.subtitles[i].start.inMilliseconds,
+                endMs: item.subtitles[i].end.inMilliseconds,
+                text: item.subtitles[i].text)
+        ]);
+      }
+      return _subtitleTimeline!.at(_position.inMilliseconds);
     }
     for (final cue in item.subtitles) {
       if (_position >= cue.start && _position <= cue.end) {
@@ -1694,8 +1720,85 @@ class LumioAppState extends ChangeNotifier {
     }
   }
 
+  String subtitleSignature(MediaItem item) {
+    final value = jsonEncode(
+        [item.subtitles.map((e) => e.toJson()).toList(), item.subtitleState]);
+    var hash = 0x811c9dc5;
+    for (final code in value.codeUnits) {
+      hash = ((hash ^ code) * 0x01000193) & 0xffffffff;
+    }
+    return '${value.length}:${hash.toRadixString(16)}';
+  }
+
+  Future<String> applyWorkbenchSubtitles(
+      Map<String, dynamic> binding, List<SubtitleCue> cues,
+      {String origin = 'edited', String sourceName = ''}) async {
+    if (!platformCapabilities.supportsSubtitleEditing)
+      throw UnsupportedError('仅桌面端支持字幕编辑');
+    final id = binding['mediaId'] as String;
+    final previous = _findItem(id);
+    if (previous == null ||
+        previous.path != binding['path'] ||
+        subtitleSignature(previous) != binding['signature']) {
+      throw StateError('媒体已移动、删除或字幕已更新，请从视频重新打开工作台。当前草稿会保留。');
+    }
+    if (previous.subtitleState.isNotEmpty &&
+        previous.subtitleState['version'] != 1)
+      throw StateError('不支持的字幕数据版本，未覆盖。');
+    final updated = previous.copyWith(subtitles: cues, subtitleState: {
+      'version': 1,
+      'revision': (previous.subtitleState['revision'] as int? ?? 0) + 1,
+      'origin': origin == 'sidecar' ? 'sidecar' : 'edited',
+      'sourceName': sourceName,
+      'visible': previous.subtitleState['visible'] ?? true,
+    });
+    _replaceItem(updated);
+    try {
+      await _saveAuthoringLibrary();
+    } catch (_) {
+      final latest = _findItem(id);
+      if (latest != null && identical(latest.subtitles, cues))
+        _replaceItem(latest.copyWith(
+            subtitles: previous.subtitles,
+            subtitleState: previous.subtitleState));
+      rethrow;
+    }
+    notifyListeners();
+    return subtitleSignature(updated);
+  }
+
+  Future<void> setVideoSubtitlesVisible(String id, bool visible) async {
+    if (!platformCapabilities.supportsSubtitleEditing) return;
+    final item = _findItem(id);
+    if (item == null) return;
+    if (item.subtitleState.isNotEmpty && item.subtitleState['version'] != 1)
+      throw StateError('不支持的字幕数据版本');
+    final metadata = {...item.subtitleState, 'version': 1, 'visible': visible};
+    _replaceItem(item.copyWith(subtitleState: metadata));
+    try {
+      await _saveAuthoringLibrary();
+    } catch (_) {
+      final latest = _findItem(id);
+      if (latest != null && identical(latest.subtitleState, metadata))
+        _replaceItem(latest.copyWith(subtitleState: item.subtitleState));
+      rethrow;
+    }
+    notifyListeners();
+  }
+
   Future<void> createBackup() async {
-    final info = await _appStorageRepository.createBackup(_snapshotState());
+    final snapshot = _snapshotState();
+    if (platformCapabilities.supportsSubtitleEditing) {
+      try {
+        snapshot['subtitleProjects'] =
+            await SubtitleWorkbenchRepository().snapshot();
+      } catch (e) {
+        _backupStatusMessage = '字幕项目备份失败，未创建不完整备份：$e';
+        notifyListeners();
+        return;
+      }
+    }
+    final info = await _appStorageRepository.createBackup(snapshot);
     if (info == null) {
       _backupStatusMessage = '当前平台暂不支持备份导出。';
     } else {
@@ -1706,6 +1809,18 @@ class LumioAppState extends ChangeNotifier {
 
   Future<void> restoreLatestBackup() async {
     final restored = await _appStorageRepository.restoreLatestBackup();
+    if (restored != null &&
+        platformCapabilities.supportsSubtitleEditing &&
+        restored['subtitleProjects'] is List) {
+      try {
+        await SubtitleWorkbenchRepository()
+            .restore(restored['subtitleProjects'] as List);
+      } catch (e) {
+        _backupStatusMessage = '字幕项目恢复失败：$e';
+        notifyListeners();
+        return;
+      }
+    }
     if (restored == null || !_applyPersistedState(restored)) {
       _backupStatusMessage = '没有找到可恢复的备份。';
       notifyListeners();
@@ -2074,8 +2189,13 @@ class LumioAppState extends ChangeNotifier {
     }
     if (_disposed) return;
     if (lyricsOnly) {
-      lyricChanges.value++;
-      _syncDesktopLyrics();
+      if (_currentItem?.kind == MediaKind.video &&
+          platformCapabilities.supportsSubtitleEditing) {
+        subtitleChanges.value++;
+      } else {
+        lyricChanges.value++;
+        _syncDesktopLyrics();
+      }
     } else {
       notifyListeners();
     }
@@ -2251,6 +2371,12 @@ class LumioAppState extends ChangeNotifier {
             : const LyricTiming(),
         hasCustomLyrics: previous.hasCustomLyrics,
         lyricDraft: previous.lyricDraft,
+        subtitles: previous.subtitleState['origin'] == 'edited' ||
+                (previous.subtitleState.isNotEmpty &&
+                    previous.subtitleState['version'] != 1)
+            ? previous.subtitles
+            : item.subtitles,
+        subtitleState: previous.subtitleState,
       );
     }).toList(growable: false);
   }
@@ -2408,6 +2534,7 @@ class LumioAppState extends ChangeNotifier {
     _disposed = true;
     _lyricTimer?.cancel();
     lyricChanges.dispose();
+    subtitleChanges.dispose();
     removeListener(_reconcileLyricUpdates);
     removeListener(_syncDesktopLyrics);
     desktopLyrics.removeListener(_desktopLyricsChanged);

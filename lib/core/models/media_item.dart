@@ -112,6 +112,7 @@ class MediaItem {
     this.lyricTiming = const LyricTiming(),
     this.lyricDraft,
     this.subtitles = const <SubtitleCue>[],
+    this.subtitleState = const <String, Object?>{},
     this.lastPosition = Duration.zero,
     this.resolution,
     this.fileSizeBytes = 0,
@@ -150,6 +151,9 @@ class MediaItem {
       lyricTiming: LyricTiming.fromJson(json['lyricTiming'], lyrics),
       lyricDraft: LyricDraft.fromJson(json['lyricDraft']),
       hasCustomLyrics: json['hasCustomLyrics'] == true,
+      subtitleState: json['subtitleState'] is Map
+          ? Map<String, Object?>.from(json['subtitleState'] as Map)
+          : const {},
       subtitles: _asList(json['subtitles'])
           .whereType<Map<Object?, Object?>>()
           .map(
@@ -187,6 +191,7 @@ class MediaItem {
   final LyricTiming lyricTiming;
   final LyricDraft? lyricDraft;
   final List<SubtitleCue> subtitles;
+  final Map<String, Object?> subtitleState;
   final Duration lastPosition;
   final String? resolution;
   final int fileSizeBytes;
@@ -232,6 +237,7 @@ class MediaItem {
     LyricDraft? lyricDraft,
     bool clearLyricDraft = false,
     List<SubtitleCue>? subtitles,
+    Map<String, Object?>? subtitleState,
     Duration? lastPosition,
     String? resolution,
     int? fileSizeBytes,
@@ -266,6 +272,7 @@ class MediaItem {
               ? const LyricTiming()
               : this.lyricTiming),
       subtitles: subtitles ?? this.subtitles,
+      subtitleState: subtitleState ?? this.subtitleState,
       lastPosition: lastPosition ?? this.lastPosition,
       resolution: resolution ?? this.resolution,
       fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
@@ -297,6 +304,7 @@ class MediaItem {
       'lyricTiming': lyricTiming.toJson(),
       if (lyricDraft != null) 'lyricDraft': lyricDraft!.toJson(),
       'subtitles': subtitles.map((cue) => cue.toJson()).toList(growable: false),
+      if (subtitleState.isNotEmpty) 'subtitleState': subtitleState,
       'lastPositionMs': lastPosition.inMilliseconds,
       'resolution': resolution,
       'fileSizeBytes': fileSizeBytes,
