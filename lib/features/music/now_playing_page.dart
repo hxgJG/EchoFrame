@@ -13,6 +13,7 @@ import '../../platform/media_library/lyrics_import.dart';
 import '../../shared/widgets/media_tile.dart';
 import '../../shared/widgets/lyrics_export_action.dart';
 import 'lyric_calibration_dialog.dart';
+import 'lyric_authoring_page.dart';
 
 class NowPlayingPage extends StatefulWidget {
   const NowPlayingPage({super.key, required this.state});
@@ -1167,6 +1168,18 @@ void _showMoreActions(BuildContext context, LumioAppState state) {
         child: ListView(
           shrinkWrap: true,
           children: <Widget>[
+            if (state.currentItem?.kind == MediaKind.audio)
+              ListTile(
+                leading: const Icon(Icons.edit_note_rounded),
+                title: const Text('制作歌词 / 继续草稿'),
+                onTap: () {
+                  final item = state.currentItem!;
+                  Navigator.of(context).pop();
+                  Navigator.of(pageContext).push(MaterialPageRoute<void>(
+                      builder: (_) =>
+                          LyricAuthoringPage(state: state, item: item)));
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.looks_one_rounded),
               title: const Text('设置 A 点'),

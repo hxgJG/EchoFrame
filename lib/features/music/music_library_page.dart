@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'audio_selection.dart';
+import 'lyric_authoring_page.dart';
 
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
@@ -601,6 +602,7 @@ class _SongMenu extends StatelessWidget {
             enabled: item.lyrics.isNotEmpty && !state.isExportingLyrics,
             child: const Text('导出歌词')),
         const PopupMenuItem(value: 'edit', child: Text('编辑信息')),
+        const PopupMenuItem(value: 'authorLyrics', child: Text('制作歌词 / 继续草稿')),
         const PopupMenuItem(value: 'renameFile', child: Text('重命名文件')),
         const PopupMenuItem(value: 'moveFile', child: Text('移动文件')),
         const PopupMenuItem(value: 'deleteFile', child: Text('从媒体库移除')),
@@ -627,6 +629,9 @@ class _SongMenu extends StatelessWidget {
             runLyricsExport(context, state, mediaId: item.id);
           case 'edit':
             _showMetadataDialog(context, state, item);
+          case 'authorLyrics':
+            Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => LyricAuthoringPage(state: state, item: item)));
           case 'renameFile':
             _renameFile(context);
           case 'moveFile':

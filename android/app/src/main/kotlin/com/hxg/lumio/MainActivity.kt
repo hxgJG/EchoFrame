@@ -95,6 +95,7 @@ class MainActivity : FlutterActivity() {
     private var pendingScanArguments: Any? = null
     private var pendingFileOperation: PendingMediaFileOperation? = null
     private var pendingLyricsImportResult: MethodChannel.Result? = null
+    private var pendingLyricsPlainText = false
     private var playbackChannel: MethodChannel? = null
     private var mediaControllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
@@ -205,6 +206,7 @@ class MainActivity : FlutterActivity() {
                     "loadArtwork" -> loadArtwork(call.arguments, result)
                     "performFileOperation" -> performMediaFileOperation(call.arguments, result)
                     "importLyrics" -> importLyrics(result)
+                    "importLyricsText" -> importLyrics(result, true)
                     "exportLyrics" -> exportLyrics(call.arguments, result)
                     else -> result.notImplemented()
                 }
@@ -761,19 +763,20 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun importLyrics(result: MethodChannel.Result) {
+    private fun importLyrics(result: MethodChannel.Result, plainText: Boolean = false) {
         if (pendingLyricsImportResult != null) {
             result.success(lyricsImportResult("failed", "已有歌词文件正在选择中。"))
             return
         }
         pendingLyricsImportResult = result
+        pendingLyricsPlainText = plainText
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "*/*"
         }
         try {
             startActivityForResult(
-                Intent.createChooser(intent, "选择 LRC 歌词文件"),
+                Intent.createChooser(intent, if (plainText) "选择 TXT 歌词文本" else "选择 LRC 歌词文件"),
                 lyricsPickerRequestCode,
             )
         } catch (error: Exception) {
@@ -843,6 +846,7 @@ class MainActivity : FlutterActivity() {
 
     private fun completeLyricsImport(resultCode: Int, data: Intent?) {
         val result = pendingLyricsImportResult ?: return
+        val extension = if (pendingLyricsPlainText) ".txt" else ".lrc"
         pendingLyricsImportResult = null
         if (resultCode != Activity.RESULT_OK || data?.data == null) {
             result.success(lyricsImportResult("cancelled", "已取消选择歌词文件。"))
@@ -852,8 +856,8 @@ class MainActivity : FlutterActivity() {
         mediaScanExecutor.execute {
             val response = try {
                 val fileName = queryDisplayName(uri)
-                if (!fileName.endsWith(".lrc", ignoreCase = true)) {
-                    lyricsImportResult("failed", "请选择 .lrc 格式的歌词文件。")
+                if (!fileName.endsWith(extension, ignoreCase = true)) {
+                    lyricsImportResult("failed", "请选择 $extension 格式的歌词文件。")
                 } else {
                     val text = readLyricsText(uri)
                     lyricsImportResult(

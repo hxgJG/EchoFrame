@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../lyrics/lyric_draft.dart';
 
 enum MediaKind { audio, video }
 
@@ -109,6 +110,7 @@ class MediaItem {
     this.lyrics = const <LyricLine>[],
     this.hasCustomLyrics = false,
     this.lyricTiming = const LyricTiming(),
+    this.lyricDraft,
     this.subtitles = const <SubtitleCue>[],
     this.lastPosition = Duration.zero,
     this.resolution,
@@ -146,6 +148,7 @@ class MediaItem {
       isFavorite: json['isFavorite'] == true,
       lyrics: lyrics,
       lyricTiming: LyricTiming.fromJson(json['lyricTiming'], lyrics),
+      lyricDraft: LyricDraft.fromJson(json['lyricDraft']),
       hasCustomLyrics: json['hasCustomLyrics'] == true,
       subtitles: _asList(json['subtitles'])
           .whereType<Map<Object?, Object?>>()
@@ -182,6 +185,7 @@ class MediaItem {
   final List<LyricLine> lyrics;
   final bool hasCustomLyrics;
   final LyricTiming lyricTiming;
+  final LyricDraft? lyricDraft;
   final List<SubtitleCue> subtitles;
   final Duration lastPosition;
   final String? resolution;
@@ -225,6 +229,8 @@ class MediaItem {
     List<LyricLine>? lyrics,
     bool? hasCustomLyrics,
     LyricTiming? lyricTiming,
+    LyricDraft? lyricDraft,
+    bool clearLyricDraft = false,
     List<SubtitleCue>? subtitles,
     Duration? lastPosition,
     String? resolution,
@@ -251,6 +257,7 @@ class MediaItem {
       isFavorite: isFavorite ?? this.isFavorite,
       lyrics: lyrics ?? this.lyrics,
       hasCustomLyrics: hasCustomLyrics ?? this.hasCustomLyrics,
+      lyricDraft: clearLyricDraft ? null : lyricDraft ?? this.lyricDraft,
       lyricTiming: lyricTiming ??
           (lyrics != null &&
                   !identical(lyrics, this.lyrics) &&
@@ -288,6 +295,7 @@ class MediaItem {
       'lyrics': lyrics.map((line) => line.toJson()).toList(growable: false),
       'hasCustomLyrics': hasCustomLyrics,
       'lyricTiming': lyricTiming.toJson(),
+      if (lyricDraft != null) 'lyricDraft': lyricDraft!.toJson(),
       'subtitles': subtitles.map((cue) => cue.toJson()).toList(growable: false),
       'lastPositionMs': lastPosition.inMilliseconds,
       'resolution': resolution,

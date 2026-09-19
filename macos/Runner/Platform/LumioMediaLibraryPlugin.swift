@@ -126,6 +126,8 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
       }
     case "importLyrics":
       presentLyricsPicker(result: result)
+    case "importLyricsText":
+      presentLyricsPicker(result: result, plainText: true)
     case "exportLyrics":
       exportLyrics(call.arguments, result: result)
     default:
@@ -213,17 +215,18 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
     }
   }
 
-  private func presentLyricsPicker(result: @escaping FlutterResult) {
+  private func presentLyricsPicker(result: @escaping FlutterResult, plainText: Bool = false) {
+    let fileExtension = plainText ? "txt" : "lrc"
     let panel = NSOpenPanel()
-    panel.title = "选择 LRC 歌词文件"
-    panel.message = "所选歌词会绑定到当前歌曲，并保存在忆光媒体库中。"
+    panel.title = plainText ? "选择 TXT 歌词文本" : "选择 LRC 歌词文件"
+    panel.message = plainText ? "导入文本用于制作草稿，不会替换正式歌词。" : "所选歌词会绑定到当前歌曲，并保存在忆光媒体库中。"
     panel.prompt = "导入"
     panel.canChooseDirectories = false
     panel.canChooseFiles = true
     panel.allowsMultipleSelection = false
     panel.resolvesAliases = true
     panel.allowedContentTypes = [
-      UTType(filenameExtension: "lrc") ?? .plainText,
+      UTType(filenameExtension: fileExtension) ?? .plainText,
       .plainText,
     ]
 
@@ -232,8 +235,8 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
         result(self.lyricsImportResult(status: "cancelled", message: "已取消选择歌词文件。"))
         return
       }
-      guard url.pathExtension.caseInsensitiveCompare("lrc") == .orderedSame else {
-        result(self.lyricsImportResult(status: "failed", message: "请选择 .lrc 格式的歌词文件。"))
+      guard url.pathExtension.caseInsensitiveCompare(fileExtension) == .orderedSame else {
+        result(self.lyricsImportResult(status: "failed", message: "请选择 .\(fileExtension) 格式的歌词文件。"))
         return
       }
       let isAccessing = url.startAccessingSecurityScopedResource()

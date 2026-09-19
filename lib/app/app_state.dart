@@ -9,6 +9,7 @@ import '../core/models/media_item.dart';
 import '../core/models/playlist.dart';
 import '../core/lyrics/lrc_parser.dart';
 import '../core/lyrics/lyric_calibration.dart';
+import '../core/lyrics/lyric_draft.dart';
 import '../core/lyrics/lyrics_export.dart';
 import '../core/playback/playback_interruption_controller.dart';
 import '../platform/app_storage/app_storage_repository.dart';
@@ -352,6 +353,120 @@ class LumioAppState extends ChangeNotifier {
     }
   }
 
+  int _authoringViews = 0;
+  void attachAuthoring() {
+    _authoringViews++;
+    _reconcileLyricUpdates();
+  }
+
+  void detachAuthoring() {
+    if (_authoringViews > 0) _authoringViews--;
+    _reconcileLyricUpdates();
+  }
+
+  MediaItem? authoringItem(String id) => _findItem(id);
+  Future<LyricsImportResult> importAuthoringText() =>
+      _mediaLibraryRepository.importLyricsText();
+
+  Future<Duration> authoringPosition(String id) async {
+    final epoch = _playbackEpoch;
+    if (_currentItem?.id != id || !_isPlaying)
+      throw StateError('请先播放正在制作歌词的歌曲。');
+    final position = await _playbackRepository
+        .position()
+        .timeout(const Duration(seconds: 2));
+    if (_currentItem?.id != id || !_isPlaying || epoch != _playbackEpoch)
+      throw StateError('播放状态已变化，请重新标记。');
+    return position;
+  }
+
+  Future<void> _saveAuthoringLibrary() async {
+    const partitions = {AppStoragePartition.library};
+    final snapshot = _snapshotState(partitions: partitions);
+    final storage = _appStorageRepository;
+    if (storage is PlatformAppStorageRepository) {
+      await storage.saveChecked(snapshot, partitions: partitions);
+    } else {
+      await storage.save(snapshot, partitions: partitions);
+    }
+  }
+
+  Future<void> saveLyricDraft(String id, LyricDraft draft) async {
+    final item = _findItem(id);
+    if (item == null) throw StateError('歌曲已不在媒体库中。');
+    _replaceItem(item.copyWith(lyricDraft: draft));
+    try {
+      await _saveAuthoringLibrary();
+    } catch (_) {
+      final latest = _findItem(id);
+      if (latest != null && identical(latest.lyricDraft, draft)) {
+        _replaceItem(latest.copyWith(
+            lyricDraft: item.lyricDraft,
+            clearLyricDraft: item.lyricDraft == null));
+      }
+      rethrow;
+    }
+  }
+
+  MediaItem _authoredItem(String id, LyricDraft draft) {
+    final item = _findItem(id);
+    if (item == null) throw StateError('歌曲已不在媒体库中。');
+    final errors = draft.validate(item.duration);
+    if (errors.isNotEmpty) throw FormatException(errors.join('\n'));
+    return item.copyWith(
+        lyrics: draft.lines
+            .map((line) => LyricLine(
+                time: Duration(milliseconds: line.timeMs!), text: line.text))
+            .toList(),
+        lyricTiming: const LyricTiming(),
+        hasCustomLyrics: true,
+        lyricDraft: draft);
+  }
+
+  Future<void> applyAuthoredLyrics(String id, LyricDraft draft,
+      {String? expectedLyrics, int? expectedOffset}) async {
+    final previous = _findItem(id);
+    if (previous != null &&
+        ((expectedLyrics != null &&
+                LyricTiming.signatureFor(previous.lyrics) != expectedLyrics) ||
+            (expectedOffset != null &&
+                previous.lyricTiming.offsetMs != expectedOffset))) {
+      throw StateError('正式歌词或校准已变化，请重新确认后应用。');
+    }
+    final updated = _authoredItem(id, draft);
+    _replaceItem(updated);
+    try {
+      await _saveAuthoringLibrary();
+    } catch (_) {
+      final latest = _findItem(id);
+      if (latest != null &&
+          previous != null &&
+          identical(latest.lyrics, updated.lyrics)) {
+        _replaceItem(latest.copyWith(
+            lyrics: previous.lyrics,
+            lyricTiming: previous.lyricTiming,
+            hasCustomLyrics: previous.hasCustomLyrics));
+      }
+      rethrow;
+    }
+    if (!_disposed) notifyListeners();
+  }
+
+  Future<LyricsExportResult> exportAuthoredLyrics(
+      String id, LyricDraft draft) async {
+    if (_isExportingLyrics) throw StateError('请先完成当前导出。');
+    final item = _authoredItem(id, draft);
+    _isExportingLyrics = true;
+    notifyListeners();
+    try {
+      final file = await compute(buildLyricsExport, ([item], false));
+      return await _mediaLibraryRepository.exportLyrics(file);
+    } finally {
+      _isExportingLyrics = false;
+      if (!_disposed) notifyListeners();
+    }
+  }
+
   void _reconcileLyricUpdates() {
     final draft = _lyricCalibration;
     if (draft != null && !isLyricCalibrationValid(draft)) {
@@ -359,10 +474,11 @@ class LumioAppState extends ChangeNotifier {
     }
     final active = _isPlaying &&
         _currentItem?.kind == MediaKind.audio &&
-        (_currentItem?.lyrics.isNotEmpty ?? false) &&
-        (_lyricViewCount > 0 ||
-            desktopLyrics.enabled ||
-            _lyricCalibration != null);
+        (_authoringViews > 0 ||
+            ((_currentItem?.lyrics.isNotEmpty ?? false) &&
+                (_lyricViewCount > 0 ||
+                    desktopLyrics.enabled ||
+                    _lyricCalibration != null)));
     if (active && _lyricTimer == null) {
       _lyricTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
         _syncPlaybackPosition(lyricsOnly: true);
@@ -2134,6 +2250,7 @@ class LumioAppState extends ChangeNotifier {
             ? previous.lyricTiming
             : const LyricTiming(),
         hasCustomLyrics: previous.hasCustomLyrics,
+        lyricDraft: previous.lyricDraft,
       );
     }).toList(growable: false);
   }

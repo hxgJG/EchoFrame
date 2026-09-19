@@ -77,6 +77,10 @@ class MediaLibraryScanResult {
 }
 
 abstract class MediaLibraryRepository {
+  Future<LyricsImportResult> importLyricsText() async =>
+      const LyricsImportResult(
+          status: LyricsImportStatus.unsupported,
+          message: '当前平台不支持 TXT 导入，可直接粘贴文本。');
   Future<LyricsExportResult> exportLyrics(LyricsExportFile file) async =>
       const LyricsExportResult(
           status: LyricsExportStatus.unsupported, message: '当前平台暂不支持歌词导出。');

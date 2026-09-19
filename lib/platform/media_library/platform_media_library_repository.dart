@@ -105,7 +105,13 @@ class PlatformMediaLibraryRepository implements MediaLibraryRepository {
   }
 
   @override
-  Future<LyricsImportResult> importLyrics() async {
+  Future<LyricsImportResult> importLyrics() => _importLyrics('importLyrics');
+
+  @override
+  Future<LyricsImportResult> importLyricsText() =>
+      _importLyrics('importLyricsText');
+
+  Future<LyricsImportResult> _importLyrics(String method) async {
     if (!_isSupportedPlatform) {
       return const LyricsImportResult(
         status: LyricsImportStatus.unsupported,
@@ -114,7 +120,7 @@ class PlatformMediaLibraryRepository implements MediaLibraryRepository {
     }
     try {
       final raw = await _channel.invokeMapMethod<Object?, Object?>(
-        'importLyrics',
+        method,
       );
       if (raw == null) {
         return const LyricsImportResult(
