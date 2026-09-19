@@ -131,13 +131,13 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
       guard let self, self.enabled, !self.locked, self.isAudio else { return }
       self.channel.invokeMethod("playbackAction", arguments: action)
     }
+    content.onActivate = { [weak self] in
+      guard let self, self.enabled, !self.locked else { return }
+      self.activateMainWindow()
+    }
     content.onCalibrate = { [weak self] mediaId in
       guard let self, self.enabled, !self.locked, self.isAudio else { return }
-      NSApp.activate(ignoringOtherApps: true)
-      if let mainWindow = NSApp.windows.first(where: { $0.contentViewController is FlutterViewController }) {
-        mainWindow.deminiaturize(nil)
-        mainWindow.makeKeyAndOrderFront(nil)
-      }
+      self.activateMainWindow()
       self.channel.invokeMethod("openLyricCalibration", arguments: mediaId)
     }
     window.contentView = content
@@ -145,6 +145,14 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
     lyricsView = content
     placePanel(reset: false)
     window.delegate = self
+  }
+
+  private func activateMainWindow() {
+    guard let window = NSApp.windows.first(where: { $0.contentViewController is FlutterViewController }) else { return }
+    NSApp.unhide(nil)
+    NSApp.activate(ignoringOtherApps: true)
+    window.deminiaturize(nil)
+    window.makeKeyAndOrderFront(nil)
   }
 
   private func reconcileVisibility() {
@@ -221,6 +229,7 @@ private final class LyricsPanel: NSPanel {
 }
 
 private final class LyricsView: NSView {
+  var onActivate: (() -> Void)?
   var onClose: (() -> Void)?
   var onLock: (() -> Void)?
   var onPlaybackAction: ((String) -> Void)?
@@ -235,7 +244,17 @@ private final class LyricsView: NSView {
   private let playButton = NSButton(title: "", target: nil, action: nil)
   private let nextButton = NSButton(title: "", target: nil, action: nil)
   private var locked = false
+  private var clickStart: NSEvent?
+  private var didDrag = false
   override var isFlipped: Bool { true }
+  override var mouseDownCanMoveWindow: Bool { false }
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    let hit = super.hitTest(point)
+    if hit === titleLabel || hit === currentLabel || hit === nextLabel { return self }
+    return hit
+  }
 
   override init(frame frameRect: NSRect) {
     super.init(frame: frameRect)
@@ -356,7 +375,25 @@ private final class LyricsView: NSView {
   }
 
   override func mouseDown(with event: NSEvent) {
-    if !locked { window?.performDrag(with: event) }
+    clickStart = locked ? nil : event
+    didDrag = false
+  }
+
+  override func mouseDragged(with event: NSEvent) {
+    guard !locked, !didDrag, let start = clickStart else { return }
+    let delta = NSPoint(x: event.locationInWindow.x - start.locationInWindow.x,
+      y: event.locationInWindow.y - start.locationInWindow.y)
+    guard hypot(delta.x, delta.y) >= 4 else { return }
+    // 原生拖动可能消费 mouseUp；在进入拖动循环前排除本次单击。
+    didDrag = true
+    window?.performDrag(with: start)
+  }
+
+  override func mouseUp(with event: NSEvent) {
+    defer { clickStart = nil }
+    guard !locked, clickStart != nil, !didDrag,
+          bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+    onActivate?()
   }
 
   override func menu(for event: NSEvent) -> NSMenu? {
