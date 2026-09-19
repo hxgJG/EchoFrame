@@ -8,20 +8,58 @@ import 'app/theme.dart';
 import 'features/music/music_home_page.dart';
 import 'features/music/music_library_page.dart';
 import 'features/music/now_playing_page.dart';
+import 'features/music/lyric_calibration_dialog.dart';
 import 'features/music/playlists_page.dart';
 import 'features/settings/settings_page.dart';
 import 'features/video/video_page.dart';
 import 'shared/widgets/mini_player.dart';
+import 'shared/widgets/mobile_player_shell.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(LumioApp(state: LumioAppState()));
 }
 
-class LumioApp extends StatelessWidget {
+class LumioApp extends StatefulWidget {
   const LumioApp({super.key, required this.state});
 
   final LumioAppState state;
+
+  @override
+  State<LumioApp> createState() => _LumioAppState();
+}
+
+class _LumioAppState extends State<LumioApp> {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  LumioAppState get state => widget.state;
+
+  @override
+  void initState() {
+    super.initState();
+    state.desktopLyrics.onOpenCalibration = _openCalibration;
+  }
+
+  @override
+  void didUpdateWidget(covariant LumioApp oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.state != state) {
+      oldWidget.state.desktopLyrics.onOpenCalibration = null;
+      state.desktopLyrics.onOpenCalibration = _openCalibration;
+    }
+  }
+
+  void _openCalibration(String mediaId) {
+    final context = _navigatorKey.currentContext;
+    if (context != null && state.currentItem?.id == mediaId) {
+      showLyricCalibration(context, state);
+    }
+  }
+
+  @override
+  void dispose() {
+    state.desktopLyrics.onOpenCalibration = null;
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -29,6 +67,7 @@ class LumioApp extends StatelessWidget {
       animation: state,
       builder: (context, _) {
         return MaterialApp(
+          navigatorKey: _navigatorKey,
           debugShowCheckedModeBanner: false,
           theme: LumioTheme.light(
               accent: state.settings.themeAccent,
@@ -496,34 +535,45 @@ class _CompactShell extends StatelessWidget {
       AppSection.video => LumioTheme.videoColor(context),
       AppSection.settings => scheme.primary,
     };
+    final navigation = NavigationBarTheme(
+      data: NavigationBarThemeData(
+        indicatorColor: navigationColor.withValues(
+          alpha: scheme.brightness == Brightness.dark ? 0.24 : 0.14,
+        ),
+      ),
+      child: NavigationBar(
+        selectedIndex: state.section.index,
+        onDestinationSelected: (index) {
+          state.selectSection(destinations[index].section);
+        },
+        destinations: destinations
+            .map(
+              (destination) => NavigationDestination(
+                icon: Icon(destination.icon),
+                selectedIcon: Icon(destination.selectedIcon),
+                label: destination.label,
+              ),
+            )
+            .toList(growable: false),
+      ),
+    );
+    if (Platform.isAndroid ||
+        Platform.isIOS ||
+        Platform.operatingSystem == 'ohos') {
+      return MobilePlayerShell(
+        state: state,
+        body: _pageFor(state),
+        navigationBar: navigation,
+        onOpenNowPlaying: onOpenNowPlaying,
+      );
+    }
     return Scaffold(
       body: SafeArea(bottom: false, child: _pageFor(state)),
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
+        children: [
           MiniPlayer(state: state, onExpand: onOpenNowPlaying),
-          NavigationBarTheme(
-            data: NavigationBarThemeData(
-              indicatorColor: navigationColor.withValues(
-                alpha: scheme.brightness == Brightness.dark ? 0.24 : 0.14,
-              ),
-            ),
-            child: NavigationBar(
-              selectedIndex: state.section.index,
-              onDestinationSelected: (index) {
-                state.selectSection(destinations[index].section);
-              },
-              destinations: destinations
-                  .map(
-                    (destination) => NavigationDestination(
-                      icon: Icon(destination.icon),
-                      selectedIcon: Icon(destination.selectedIcon),
-                      label: destination.label,
-                    ),
-                  )
-                  .toList(growable: false),
-            ),
-          ),
+          navigation
         ],
       ),
     );

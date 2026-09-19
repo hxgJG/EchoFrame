@@ -18,6 +18,7 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
   private let queue = DispatchQueue(label: "com.hxg.lumio.media-library", qos: .userInitiated)
   private let scanStateLock = NSLock()
   private var scanCancelled = false
+  private var exportingLyrics = false
   private var mediaIndex: [String: IndexedMedia] = [:]
   private let snapshotURL = LumioPaths.applicationSupportDirectory
     .appendingPathComponent("scan_snapshot.json")
@@ -125,8 +126,60 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
       }
     case "importLyrics":
       presentLyricsPicker(result: result)
+    case "exportLyrics":
+      exportLyrics(call.arguments, result: result)
     default:
       result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private func exportLyrics(_ arguments: Any?, result: @escaping FlutterResult) {
+    guard !exportingLyrics else {
+      result(["status": "failed", "message": "已有歌词正在导出。"])
+      return
+    }
+    guard let args = arguments as? [String: Any],
+          let name = args["fileName"] as? String,
+          !name.contains("/"), !name.contains("\\"),
+          name.hasSuffix(".lrc") || name.hasSuffix(".zip"),
+          let payload = args["bytes"] as? FlutterStandardTypedData,
+          !payload.data.isEmpty, payload.data.count <= 32 * 1024 * 1024 else {
+      result(["status": "failed", "message": "歌词导出内容无效或超过 32 MB。"])
+      return
+    }
+    exportingLyrics = true
+    let panel = NSSavePanel()
+    panel.title = name.hasSuffix(".zip") ? "导出全部歌词" : "导出歌词"
+    panel.nameFieldStringValue = name
+    panel.canCreateDirectories = true
+    panel.allowedContentTypes = [name.hasSuffix(".zip") ? .zip : (UTType(filenameExtension: "lrc", conformingTo: .plainText) ?? .plainText)]
+    let completion: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+      guard let self else { return }
+      guard response == .OK, let url = panel.url else {
+        self.exportingLyrics = false
+        result(["status": "cancelled", "message": "已取消导出。"])
+        return
+      }
+      let scoped = url.startAccessingSecurityScopedResource()
+      self.queue.async {
+        let response: [String: String]
+        do {
+          try payload.data.write(to: url, options: .atomic)
+          response = ["status": "completed", "message": "歌词已保存。"]
+        } catch {
+          response = ["status": "failed", "message": "保存失败：\(error.localizedDescription)"]
+        }
+        if scoped { url.stopAccessingSecurityScopedResource() }
+        DispatchQueue.main.async {
+          self.exportingLyrics = false
+          result(response)
+        }
+      }
+    }
+    if let window {
+      panel.beginSheetModal(for: window, completionHandler: completion)
+    } else {
+      completion(panel.runModal())
     }
   }
 
@@ -402,7 +455,7 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
     item["lyricsText"] = readTextSidecar(base: base, extensions: ["lrc"])
     item["subtitleText"] = readTextSidecar(base: base, extensions: ["srt"])
     item["assSubtitleText"] = readTextSidecar(base: base, extensions: ["ass", "ssa"])
-    return item
+    return LumioMetadataRepair.record(item)
   }
 
   private func metadataString(_ asset: AVAsset, key: AVMetadataKey) -> String? {
@@ -545,7 +598,7 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
     guard let data = try? Data(contentsOf: snapshotURL),
           let object = try? JSONSerialization.jsonObject(with: data),
           let snapshot = object as? [String: Any] else { return nil }
-    return snapshot
+    return LumioMetadataRepair.library(snapshot)
   }
 
   private func setScanCancelled(_ value: Bool) {

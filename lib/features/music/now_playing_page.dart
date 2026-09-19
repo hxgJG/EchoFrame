@@ -11,6 +11,8 @@ import '../../core/models/media_item.dart';
 import '../../core/playback/playback_page_gesture.dart';
 import '../../platform/media_library/lyrics_import.dart';
 import '../../shared/widgets/media_tile.dart';
+import '../../shared/widgets/lyrics_export_action.dart';
+import 'lyric_calibration_dialog.dart';
 
 class NowPlayingPage extends StatefulWidget {
   const NowPlayingPage({super.key, required this.state});
@@ -66,6 +68,14 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         ),
         title: Text(isVideo ? '视频播放' : '正在播放'),
         actions: <Widget>[
+          if (defaultTargetPlatform == TargetPlatform.macOS &&
+              !isVideo &&
+              item.lyrics.isNotEmpty)
+            TextButton.icon(
+              onPressed: () => showLyricCalibration(context, state),
+              icon: const Icon(Icons.sync_alt_rounded),
+              label: const Text('校准歌词'),
+            ),
           IconButton(
             tooltip: item.isFavorite ? '取消收藏' : '收藏',
             onPressed: () => state.toggleFavorite(item.id),
@@ -296,7 +306,18 @@ class _LyricsStageState extends State<_LyricsStage> {
   void initState() {
     super.initState();
     _lastLyricIndex = widget.state.currentLyricIndex;
+    widget.state.attachLyricView();
+    widget.state.lyricChanges.addListener(_lyricTick);
     _scheduleCurrentLine();
+  }
+
+  void _lyricTick() {
+    if (!mounted) return;
+    final index = widget.state.currentLyricIndex;
+    if (index != _lastLyricIndex) {
+      setState(() => _lastLyricIndex = index);
+      _scheduleCurrentLine();
+    }
   }
 
   @override
@@ -315,6 +336,8 @@ class _LyricsStageState extends State<_LyricsStage> {
 
   @override
   void dispose() {
+    widget.state.lyricChanges.removeListener(_lyricTick);
+    widget.state.detachLyricView();
     _scrollController.dispose();
     super.dispose();
   }
@@ -1191,6 +1214,18 @@ void _showMoreActions(BuildContext context, LumioAppState state) {
                 onTap: () {
                   Navigator.of(context).pop();
                   _importLyrics(pageContext, state, item);
+                },
+              ),
+            if (state.currentItem case final item?
+                when item.kind == MediaKind.audio && item.lyrics.isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.download_rounded),
+                title: const Text('导出当前歌词'),
+                subtitle: const Text('LRC 文件，包含已保存的单曲校准'),
+                enabled: !state.isExportingLyrics,
+                onTap: () {
+                  Navigator.of(context).pop();
+                  runLyricsExport(pageContext, state, mediaId: item.id);
                 },
               ),
             if (state.currentItem case final item?

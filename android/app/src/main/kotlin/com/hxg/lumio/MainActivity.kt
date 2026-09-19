@@ -72,6 +72,11 @@ private data class PendingMediaFileOperation(
 )
 
 class MainActivity : FlutterActivity() {
+    private data class PendingLyricsExport(
+        val result: MethodChannel.Result,
+        val bytes: ByteArray,
+    )
+
     private val notificationChannelId = "lumio_playback"
     private val playbackNotificationId = 2408
     private val actionPlayPause = "com.hxg.lumio.PLAY_PAUSE"
@@ -84,6 +89,8 @@ class MainActivity : FlutterActivity() {
     private val permissionRequestCode = 2407
     private val fileOperationRequestCode = 2410
     private val lyricsPickerRequestCode = 2411
+    private val lyricsExportRequestCode = 2412
+    private var pendingLyricsExport: PendingLyricsExport? = null
     private var pendingScanResult: MethodChannel.Result? = null
     private var pendingScanArguments: Any? = null
     private var pendingFileOperation: PendingMediaFileOperation? = null
@@ -198,6 +205,7 @@ class MainActivity : FlutterActivity() {
                     "loadArtwork" -> loadArtwork(call.arguments, result)
                     "performFileOperation" -> performMediaFileOperation(call.arguments, result)
                     "importLyrics" -> importLyrics(result)
+                    "exportLyrics" -> exportLyrics(call.arguments, result)
                     else -> result.notImplemented()
                 }
             }
@@ -679,7 +687,7 @@ class MainActivity : FlutterActivity() {
                 return
             }
             val text = file.readText()
-            val value = JSONObject(text).toMap()
+            val value = LumioMetadataRepair.library(JSONObject(text).toMap())
             saveAppStatePartitions(value)
             result.success(value)
         } catch (error: Exception) {
@@ -692,6 +700,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        pendingLyricsExport?.result?.success(mapOf("status" to "cancelled", "message" to "应用已关闭，导出中断。"))
+        pendingLyricsExport = null
         pendingFileOperation?.result?.success(
             fileOperationResult("cancelled", "Activity 已关闭，文件操作未完成。"),
         )
@@ -720,6 +730,10 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == lyricsExportRequestCode) {
+            completeLyricsExport(resultCode, data)
+            return
+        }
         if (requestCode == lyricsPickerRequestCode) {
             completeLyricsImport(resultCode, data)
             return
@@ -770,6 +784,60 @@ class MainActivity : FlutterActivity() {
                     error.message ?: "无法打开歌词文件选择器。",
                 ),
             )
+        }
+    }
+
+    private fun exportLyrics(arguments: Any?, result: MethodChannel.Result) {
+        if (pendingLyricsExport != null) {
+            result.success(mapOf("status" to "failed", "message" to "已有歌词正在导出。"))
+            return
+        }
+        val args = arguments as? Map<*, *>
+        val name = args?.get("fileName") as? String
+        val bytes = args?.get("bytes") as? ByteArray
+        if (name == null || name.contains('/') || name.contains('\\') ||
+            (!name.endsWith(".lrc") && !name.endsWith(".zip")) ||
+            bytes == null || bytes.isEmpty() || bytes.size > 32 * 1024 * 1024) {
+            result.success(mapOf("status" to "failed", "message" to "歌词导出内容无效或超过 32 MB。"))
+            return
+        }
+        pendingLyricsExport = PendingLyricsExport(result, bytes)
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = if (name.endsWith(".zip")) "application/zip" else "application/octet-stream"
+            putExtra(Intent.EXTRA_TITLE, name)
+        }
+        try {
+            startActivityForResult(intent, lyricsExportRequestCode)
+        } catch (error: Exception) {
+            pendingLyricsExport = null
+            result.success(mapOf("status" to "failed", "message" to (error.message ?: "无法打开系统保存界面。")))
+        }
+    }
+
+    private fun completeLyricsExport(resultCode: Int, data: Intent?) {
+        val pending = pendingLyricsExport ?: return
+        val uri = data?.data
+        if (resultCode != Activity.RESULT_OK || uri == null) {
+            pendingLyricsExport = null
+            pending.result.success(mapOf("status" to "cancelled", "message" to "已取消导出。"))
+            return
+        }
+        mediaScanExecutor.execute {
+            val response = try {
+                val stream = contentResolver.openOutputStream(uri, "wt")
+                    ?: throw java.io.IOException("无法打开目标文件。")
+                stream.use { it.write(pending.bytes) }
+                mapOf("status" to "completed", "message" to "歌词已保存。")
+            } catch (error: Exception) {
+                mapOf("status" to "failed", "message" to (error.message ?: "歌词保存失败，请重试。"))
+            }
+            runOnUiThread {
+                if (pendingLyricsExport === pending) {
+                    pendingLyricsExport = null
+                    pending.result.success(response)
+                }
+            }
         }
     }
 
@@ -998,8 +1066,8 @@ class MainActivity : FlutterActivity() {
                 mapOf(
                     "status" to "completed",
                     "message" to "Restored media library snapshot.",
-                    "audioItems" to root.optJSONArray("audioItems").toMapList(),
-                    "videoItems" to root.optJSONArray("videoItems").toMapList(),
+                    "audioItems" to root.optJSONArray("audioItems").toMapList().map(LumioMetadataRepair::record),
+                    "videoItems" to root.optJSONArray("videoItems").toMapList().map(LumioMetadataRepair::record),
                 ),
             )
         } catch (error: Exception) {
@@ -1028,7 +1096,7 @@ class MainActivity : FlutterActivity() {
         }
 
         try {
-            result.success(JSONObject(text).toMap())
+            result.success(LumioMetadataRepair.library(JSONObject(text).toMap()))
         } catch (error: Exception) {
             result.success(null)
         }
@@ -1824,7 +1892,7 @@ class MainActivity : FlutterActivity() {
             "format" to formatLabel(mimeType, path),
         )
         readSameNameText(path, "lrc")?.let { row["lyricsText"] = it }
-        return row
+        return LumioMetadataRepair.record(row)
     }
 
     private fun videoRow(cursor: Cursor): Map<String, Any?> {
@@ -1854,7 +1922,7 @@ class MainActivity : FlutterActivity() {
         } ?: readSameNameText(path, "ssa")?.let {
             row["assSubtitleText"] = it
         }
-        return row
+        return LumioMetadataRepair.record(row)
     }
 
     private fun Cursor.long(column: String): Long {

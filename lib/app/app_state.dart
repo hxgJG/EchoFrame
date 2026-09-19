@@ -2,16 +2,20 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show compute;
 
 import '../core/models/lumio_settings.dart';
 import '../core/models/media_item.dart';
 import '../core/models/playlist.dart';
 import '../core/lyrics/lrc_parser.dart';
+import '../core/lyrics/lyric_calibration.dart';
+import '../core/lyrics/lyrics_export.dart';
 import '../core/playback/playback_interruption_controller.dart';
 import '../platform/app_storage/app_storage_repository.dart';
 import '../platform/app_storage/platform_app_storage_repository.dart';
 import '../platform/desktop_lyrics/desktop_lyrics_controller.dart';
 import '../platform/media_library/lyrics_import.dart';
+import '../platform/media_library/lyrics_export_result.dart';
 import '../platform/media_library/media_file_operation.dart';
 import '../platform/media_library/media_library_repository.dart';
 import '../platform/media_library/platform_media_library_repository.dart';
@@ -49,6 +53,7 @@ class LumioAppState extends ChangeNotifier {
     _currentItem = _audioItems.isNotEmpty ? _audioItems.first : null;
     _playbackEventSubscription =
         _playbackRepository.events.listen(_handlePlaybackEvent);
+    addListener(_reconcileLyricUpdates);
     addListener(_syncDesktopLyrics);
     desktopLyrics.addListener(_desktopLyricsChanged);
     desktopLyrics.initialize(
@@ -70,6 +75,13 @@ class LumioAppState extends ChangeNotifier {
       PlaybackInterruptionController();
   late final StreamSubscription<PlaybackEvent> _playbackEventSubscription;
   Timer? _positionTimer;
+  Timer? _lyricTimer;
+  bool _positionQueryInFlight = false;
+  bool _disposed = false;
+  int _playbackEpoch = 0;
+  int _lyricViewCount = 0;
+  LyricCalibration? _lyricCalibration;
+  final ValueNotifier<int> lyricChanges = ValueNotifier(0);
   Timer? _sleepTimer;
   Timer? _sleepFadeTimer;
   List<MediaItem> _audioItems;
@@ -87,6 +99,7 @@ class LumioAppState extends ChangeNotifier {
   PlaybackView _playbackView = PlaybackView.artwork;
   Duration _position = const Duration(minutes: 1, seconds: 12);
   bool _isScanningLibrary = false;
+  bool _isExportingLyrics = false;
   bool _isUpdatingMediaSources = false;
   List<MediaSource> _mediaSources = const <MediaSource>[];
   MediaLibraryScanStatus? _lastScanStatus;
@@ -124,6 +137,56 @@ class LumioAppState extends ChangeNotifier {
   PlaybackView get playbackView => _playbackView;
   Duration get position => _position;
   bool get isScanningLibrary => _isScanningLibrary;
+  bool get isExportingLyrics => _isExportingLyrics;
+  int get exportableLyricsCount =>
+      _audioItems.where(_hasExportableLyrics).length;
+
+  bool _hasExportableLyrics(MediaItem item) =>
+      item.kind == MediaKind.audio &&
+      item.lyrics.any((line) => line.text.trim().isNotEmpty);
+
+  Future<LyricsExportResult> exportLyrics({String? mediaId}) async {
+    if (_isExportingLyrics) {
+      return const LyricsExportResult(
+          status: LyricsExportStatus.failed, message: '已有歌词正在导出，请先完成当前操作。');
+    }
+    final selected = mediaId == null ? null : _findItem(mediaId);
+    final items = mediaId == null
+        ? _audioItems.where(_hasExportableLyrics).toList(growable: false)
+        : selected != null && _hasExportableLyrics(selected)
+            ? [selected]
+            : <MediaItem>[];
+    if (items.isEmpty) {
+      return const LyricsExportResult(
+          status: LyricsExportStatus.failed, message: '没有可导出的歌词，请先导入 LRC 歌词。');
+    }
+    final skipped = mediaId == null ? _audioItems.length - items.length : 0;
+    _isExportingLyrics = true;
+    notifyListeners();
+    try {
+      final file = await compute(buildLyricsExport, (items, mediaId == null));
+      if (_disposed)
+        return const LyricsExportResult(status: LyricsExportStatus.cancelled);
+      final result = await _mediaLibraryRepository.exportLyrics(file);
+      if (result.status != LyricsExportStatus.completed) return result;
+      return LyricsExportResult(
+          status: LyricsExportStatus.completed,
+          message:
+              '已导出 ${file.count} 首歌词${mediaId == null ? '（ZIP）' : '（LRC）'}，包含已保存的单曲校准。'
+              '${skipped > 0 ? '已跳过 $skipped 首无歌词歌曲。' : ''}'
+              '${file.clampedLines > 0 ? '${file.clampedLines} 行校准后早于零秒，已按 00:00.000 导出。' : ''}');
+    } on FormatException catch (error) {
+      return LyricsExportResult(
+          status: LyricsExportStatus.failed, message: error.message);
+    } catch (_) {
+      return const LyricsExportResult(
+          status: LyricsExportStatus.failed, message: '歌词导出失败，请重试。');
+    } finally {
+      _isExportingLyrics = false;
+      if (!_disposed) notifyListeners();
+    }
+  }
+
   bool get isUpdatingMediaSources => _isUpdatingMediaSources;
   List<MediaSource> get mediaSources =>
       List<MediaSource>.unmodifiable(_mediaSources);
@@ -161,7 +224,12 @@ class LumioAppState extends ChangeNotifier {
     if (lines.isEmpty) {
       return -1;
     }
-    final effectivePosition = _position + _settings.lyricOffset;
+    final effectivePosition = _position +
+        _settings.lyricOffset +
+        Duration(
+            milliseconds: _lyricCalibration?.offsetMs ??
+                _currentItem?.lyricTiming.offsetMs ??
+                0);
     var currentIndex = -1;
     for (var index = 0; index < lines.length; index += 1) {
       if (lines[index].time <= effectivePosition) {
@@ -175,6 +243,136 @@ class LumioAppState extends ChangeNotifier {
 
   void _desktopLyricsChanged() => notifyListeners();
 
+  void attachLyricView() {
+    _lyricViewCount++;
+    _reconcileLyricUpdates();
+  }
+
+  void detachLyricView() {
+    _lyricViewCount = max(0, _lyricViewCount - 1);
+    if (!_disposed) _reconcileLyricUpdates();
+  }
+
+  bool isLyricCalibrationValid(LyricCalibration draft) {
+    final item = _currentItem;
+    return identical(_lyricCalibration, draft) &&
+        item?.id == draft.mediaId &&
+        (identical(item!.lyrics, draft.lyrics) ||
+            LyricTiming.signatureFor(item.lyrics) == draft.signature);
+  }
+
+  LyricCalibration? beginLyricCalibration() {
+    final item = _currentItem;
+    if (_lyricCalibration != null ||
+        item == null ||
+        item.kind != MediaKind.audio ||
+        item.lyrics.isEmpty) return null;
+    final draft = LyricCalibration(item);
+    _lyricCalibration = draft;
+    _reconcileLyricUpdates();
+    return draft;
+  }
+
+  bool previewLyricOffset(LyricCalibration draft, int milliseconds) {
+    if (!isLyricCalibrationValid(draft) ||
+        draft.saving ||
+        milliseconds.abs() > LyricTiming.limitMs) return false;
+    draft.offsetMs = milliseconds;
+    lyricChanges.value++;
+    _syncDesktopLyrics();
+    return true;
+  }
+
+  Future<String?> alignLyricToNow(LyricCalibration draft, int index) async {
+    if (!_isPlaying) return '请先开始播放，再对齐这一句。';
+    if (!isLyricCalibrationValid(draft) ||
+        draft.saving ||
+        index < 0 ||
+        index >= draft.lyrics.length) return '歌曲或歌词已变化，请重新校准。';
+    final epoch = _playbackEpoch;
+    try {
+      final position = await _playbackRepository
+          .position()
+          .timeout(const Duration(seconds: 2));
+      if (_disposed ||
+          epoch != _playbackEpoch ||
+          !isLyricCalibrationValid(draft)) {
+        return '播放状态已变化，请重新对齐。';
+      }
+      final offset =
+          (draft.lyrics[index].time - position - _settings.lyricOffset)
+              .inMilliseconds;
+      if (offset.abs() > LyricTiming.limitMs)
+        return '超出 ±30 秒范围，请确认选中的歌词和歌曲版本。';
+      return previewLyricOffset(draft, offset) ? null : '校准状态已变化，请重试。';
+    } catch (_) {
+      return '读取播放进度失败，请重试。';
+    }
+  }
+
+  void cancelLyricCalibration(LyricCalibration draft) {
+    if (!identical(_lyricCalibration, draft)) return;
+    _lyricCalibration = null;
+    if (!_disposed) {
+      _reconcileLyricUpdates();
+      lyricChanges.value++;
+      _syncDesktopLyrics();
+    }
+  }
+
+  Future<String?> saveLyricCalibration(LyricCalibration draft) async {
+    if (!isLyricCalibrationValid(draft) || draft.saving)
+      return '歌曲或歌词已变化，请重新校准。';
+    final item = _findItem(draft.mediaId);
+    if (item == null) return '歌曲已不在媒体库中。';
+    draft.saving = true;
+    final timing =
+        LyricTiming(offsetMs: draft.offsetMs, lyricsSignature: draft.signature);
+    _replaceItem(item.copyWith(lyricTiming: timing));
+    const partitions = {AppStoragePartition.library};
+    try {
+      final snapshot = _snapshotState(partitions: partitions);
+      final storage = _appStorageRepository;
+      if (storage is PlatformAppStorageRepository) {
+        await storage.saveChecked(snapshot, partitions: partitions);
+      } else {
+        await storage.save(snapshot, partitions: partitions);
+      }
+      cancelLyricCalibration(draft);
+      if (!_disposed) notifyListeners();
+      return null;
+    } catch (_) {
+      final latest = _findItem(draft.mediaId);
+      if (latest != null && identical(latest.lyricTiming, timing)) {
+        _replaceItem(latest.copyWith(lyricTiming: item.lyricTiming));
+      }
+      return '保存失败，调整尚未保存。请重试或取消。';
+    } finally {
+      draft.saving = false;
+    }
+  }
+
+  void _reconcileLyricUpdates() {
+    final draft = _lyricCalibration;
+    if (draft != null && !isLyricCalibrationValid(draft)) {
+      _lyricCalibration = null;
+    }
+    final active = _isPlaying &&
+        _currentItem?.kind == MediaKind.audio &&
+        (_currentItem?.lyrics.isNotEmpty ?? false) &&
+        (_lyricViewCount > 0 ||
+            desktopLyrics.enabled ||
+            _lyricCalibration != null);
+    if (active && _lyricTimer == null) {
+      _lyricTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+        _syncPlaybackPosition(lyricsOnly: true);
+      });
+    } else if (!active) {
+      _lyricTimer?.cancel();
+      _lyricTimer = null;
+    }
+  }
+
   void _syncDesktopLyrics() {
     if (!desktopLyrics.supported || !desktopLyrics.enabled) return;
     final item = _currentItem;
@@ -185,6 +383,8 @@ class LumioAppState extends ChangeNotifier {
       'title': item?.title ?? '忆光 · 桌面歌词',
       'playing': _isPlaying,
       'canControl': item?.kind == MediaKind.audio,
+      'mediaId': item?.id ?? '',
+      'canCalibrate': item?.kind == MediaKind.audio && lines.isNotEmpty,
       'current': item == null
           ? '播放音乐后在这里显示歌词'
           : lines.isEmpty
@@ -303,6 +503,8 @@ class LumioAppState extends ChangeNotifier {
   }
 
   void play(MediaItem item) {
+    _playbackEpoch++;
+    _lyricCalibration = null;
     _interruptionController.cancelPendingResume();
     final startPosition = _initialPlaybackPosition(item);
     _currentItem = item.copyWith(playCount: item.playCount + 1);
@@ -495,6 +697,7 @@ class LumioAppState extends ChangeNotifier {
     if (item == null) {
       return;
     }
+    _playbackEpoch++;
     _position = item.duration * fraction.clamp(0, 1);
     _playbackRepository.seek(_position);
     _updateCurrentVideoResumePosition(forceSave: true);
@@ -638,6 +841,7 @@ class LumioAppState extends ChangeNotifier {
   }
 
   void setPlaybackSpeed(double speed) {
+    _playbackEpoch++;
     _playbackSpeed = ((speed * 10).roundToDouble() / 10).clamp(0.5, 2.0);
     _playbackRepository.setSpeed(_playbackSpeed);
     _saveState();
@@ -879,9 +1083,13 @@ class LumioAppState extends ChangeNotifier {
         message: '没有解析到带时间标签的歌词，请选择有效的 LRC 文件。',
       );
     }
+    final latest = _findItem(mediaId);
+    if (latest == null) return result.copyWith(message: '歌曲已移除，未应用歌词。');
+    if (_lyricCalibration?.mediaId == mediaId) _lyricCalibration = null;
     _replaceItem(
-      current.copyWith(
+      latest.copyWith(
         lyrics: lyrics,
+        lyricTiming: const LyricTiming(),
         hasCustomLyrics: true,
       ),
     );
@@ -894,11 +1102,12 @@ class LumioAppState extends ChangeNotifier {
     );
     notifyListeners();
     return result.copyWith(
-      message: '已为《${current.title}》导入 ${lyrics.length} 行歌词。',
+      message: '已为《${latest.title}》导入 ${lyrics.length} 行歌词，已重置本曲校准。',
     );
   }
 
   void removeLyrics(String mediaId) {
+    if (_lyricCalibration?.mediaId == mediaId) _lyricCalibration = null;
     final current = _findItem(mediaId);
     if (current == null || current.kind != MediaKind.audio) {
       return;
@@ -1600,6 +1809,8 @@ class LumioAppState extends ChangeNotifier {
       final nextQueueIds = List<String>.from(_queueIds)..removeAt(queueIndex);
       _queueIds = nextQueueIds;
     }
+    _playbackEpoch++;
+    _lyricCalibration = null;
     _updateCurrentVideoResumePosition(forceSave: true);
     _currentItem = item.copyWith(
       playCount: item.playCount + 1,
@@ -1696,6 +1907,7 @@ class LumioAppState extends ChangeNotifier {
   }
 
   void _startPositionTimer() {
+    _playbackEpoch++;
     _positionTimer?.cancel();
     _positionTimer = Timer.periodic(const Duration(milliseconds: 700), (_) {
       _syncPlaybackPosition();
@@ -1703,16 +1915,31 @@ class LumioAppState extends ChangeNotifier {
   }
 
   void _stopPositionTimer() {
+    _playbackEpoch++;
     _positionTimer?.cancel();
     _positionTimer = null;
   }
 
-  Future<void> _syncPlaybackPosition() async {
-    if (!_isPlaying) {
+  Future<void> _syncPlaybackPosition({bool lyricsOnly = false}) async {
+    if (!_isPlaying || _positionQueryInFlight || _disposed) {
       return;
     }
-    final position = await _playbackRepository.position();
-    if (!_isPlaying || position == Duration.zero) {
+    final epoch = _playbackEpoch;
+    _positionQueryInFlight = true;
+    Duration position;
+    try {
+      position = await _playbackRepository
+          .position()
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {
+      return;
+    } finally {
+      _positionQueryInFlight = false;
+    }
+    if (_disposed ||
+        !_isPlaying ||
+        epoch != _playbackEpoch ||
+        position == Duration.zero) {
       return;
     }
     final item = _currentItem;
@@ -1725,13 +1952,21 @@ class LumioAppState extends ChangeNotifier {
     final loopStart = _abLoopStart;
     final loopEnd = _abLoopEnd;
     if (loopStart != null && loopEnd != null && _position >= loopEnd) {
+      _playbackEpoch++;
       _position = loopStart;
       await _playbackRepository.seek(loopStart);
     }
-    notifyListeners();
+    if (_disposed) return;
+    if (lyricsOnly) {
+      lyricChanges.value++;
+      _syncDesktopLyrics();
+    } else {
+      notifyListeners();
+    }
   }
 
   void _stopPlayback() {
+    _lyricCalibration = null;
     _updateCurrentVideoResumePosition(forceSave: true);
     _sleepFadeTimer?.cancel();
     _sleepFadeTimer = null;
@@ -1893,6 +2128,11 @@ class LumioAppState extends ChangeNotifier {
         lastPosition: previous.lastPosition,
         // 用户单独选择的歌词优先于扫描时发现的同名歌词。
         lyrics: previous.hasCustomLyrics ? previous.lyrics : item.lyrics,
+        lyricTiming: previous.hasCustomLyrics ||
+                LyricTiming.signatureFor(item.lyrics) ==
+                    previous.lyricTiming.lyricsSignature
+            ? previous.lyricTiming
+            : const LyricTiming(),
         hasCustomLyrics: previous.hasCustomLyrics,
       );
     }).toList(growable: false);
@@ -2048,6 +2288,10 @@ class LumioAppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _lyricTimer?.cancel();
+    lyricChanges.dispose();
+    removeListener(_reconcileLyricUpdates);
     removeListener(_syncDesktopLyrics);
     desktopLyrics.removeListener(_desktopLyricsChanged);
     desktopLyrics.dispose();

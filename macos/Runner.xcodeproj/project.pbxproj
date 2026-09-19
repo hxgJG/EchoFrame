@@ -31,6 +31,7 @@
 		A10000112026080300000001 /* LumioMacOSPlugins.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000012026080300000001 /* LumioMacOSPlugins.swift */; };
 		A10000122026080300000002 /* SecurityScopedBookmarkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022026080300000002 /* SecurityScopedBookmarkStore.swift */; };
 		A10000132026080300000003 /* LumioAppStoragePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000032026080300000003 /* LumioAppStoragePlugin.swift */; };
+		C30000132026091900000001 /* LumioMetadataRepair.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30000032026091900000001 /* LumioMetadataRepair.swift */; };
 		A10000142026080300000004 /* LumioMediaLibraryPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000042026080300000004 /* LumioMediaLibraryPlugin.swift */; };
 		A10000152026080300000005 /* LumioVideoTexture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000052026080300000005 /* LumioVideoTexture.swift */; };
 		A10000162026080300000006 /* LumioPlaybackPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000062026080300000006 /* LumioPlaybackPlugin.swift */; };
@@ -98,6 +99,7 @@
 		A10000012026080300000001 /* LumioMacOSPlugins.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LumioMacOSPlugins.swift; sourceTree = "<group>"; };
 		A10000022026080300000002 /* SecurityScopedBookmarkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityScopedBookmarkStore.swift; sourceTree = "<group>"; };
 		A10000032026080300000003 /* LumioAppStoragePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LumioAppStoragePlugin.swift; sourceTree = "<group>"; };
+		C30000032026091900000001 /* LumioMetadataRepair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LumioMetadataRepair.swift; sourceTree = "<group>"; };
 		A10000042026080300000004 /* LumioMediaLibraryPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LumioMediaLibraryPlugin.swift; sourceTree = "<group>"; };
 		A10000052026080300000005 /* LumioVideoTexture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LumioVideoTexture.swift; sourceTree = "<group>"; };
 		A10000062026080300000006 /* LumioPlaybackPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LumioPlaybackPlugin.swift; sourceTree = "<group>"; };
@@ -207,6 +209,7 @@
 				B20000012026091800000001 /* LumioDesktopLyricsPlugin.swift */,
 				A10000022026080300000002 /* SecurityScopedBookmarkStore.swift */,
 				A10000032026080300000003 /* LumioAppStoragePlugin.swift */,
+				C30000032026091900000001 /* LumioMetadataRepair.swift */,
 				A10000042026080300000004 /* LumioMediaLibraryPlugin.swift */,
 				A10000052026080300000005 /* LumioVideoTexture.swift */,
 				A10000062026080300000006 /* LumioPlaybackPlugin.swift */,
@@ -470,6 +473,7 @@
 				B20000112026091800000001 /* LumioDesktopLyricsPlugin.swift in Sources */,
 				A10000122026080300000002 /* SecurityScopedBookmarkStore.swift in Sources */,
 				A10000132026080300000003 /* LumioAppStoragePlugin.swift in Sources */,
+				C30000132026091900000001 /* LumioMetadataRepair.swift in Sources */,
 				A10000142026080300000004 /* LumioMediaLibraryPlugin.swift in Sources */,
 				A10000152026080300000005 /* LumioVideoTexture.swift in Sources */,
 				A10000162026080300000006 /* LumioPlaybackPlugin.swift in Sources */,

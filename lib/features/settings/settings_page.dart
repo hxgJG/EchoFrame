@@ -6,6 +6,7 @@ import '../../app/theme_catalog.dart';
 import '../../core/models/lumio_settings.dart';
 import '../../core/models/media_item.dart';
 import '../../shared/widgets/section_header.dart';
+import '../../shared/widgets/lyrics_export_action.dart';
 
 const List<String> _equalizerBands = <String>['60', '230', '910', '4k', '14k'];
 
@@ -427,7 +428,7 @@ class SettingsPage extends StatelessWidget {
               ),
               ListTile(
                 leading: const Icon(Icons.lyrics_rounded),
-                title: const Text('歌词偏移'),
+                title: const Text('全局歌词偏移（影响所有歌曲）'),
                 subtitle: Text(_lyricOffsetLabel(state.settings.lyricOffset)),
               ),
               Padding(
@@ -630,6 +631,21 @@ class SettingsPage extends StatelessWidget {
                 onChanged: (value) => state.setMinimumAudioDuration(
                   Duration(seconds: value.round()),
                 ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.folder_zip_outlined),
+                title: Text(state.isExportingLyrics ? '正在导出歌词…' : '导出全部歌词'),
+                subtitle: Text(
+                    '${state.exportableLyricsCount} 首可导出 · ZIP 内每首一个 LRC\n包含单曲校准，不包含全局偏移'),
+                trailing: state.isExportingLyrics
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.download_rounded),
+                enabled:
+                    !state.isExportingLyrics && state.exportableLyricsCount > 0,
+                onTap: () => runLyricsExport(context, state),
               ),
               ListTile(
                 leading: const Icon(Icons.backup_rounded),

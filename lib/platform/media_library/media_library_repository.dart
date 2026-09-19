@@ -1,4 +1,6 @@
 import '../../core/models/media_item.dart';
+import '../../core/lyrics/lyrics_export.dart';
+import 'lyrics_export_result.dart';
 import 'lyrics_import.dart';
 import 'media_file_operation.dart';
 
@@ -75,6 +77,10 @@ class MediaLibraryScanResult {
 }
 
 abstract class MediaLibraryRepository {
+  Future<LyricsExportResult> exportLyrics(LyricsExportFile file) async =>
+      const LyricsExportResult(
+          status: LyricsExportStatus.unsupported, message: '当前平台暂不支持歌词导出。');
+
   Future<List<MediaSource>> addSources() async => const <MediaSource>[];
 
   Future<List<MediaSource>> listSources() async => const <MediaSource>[];

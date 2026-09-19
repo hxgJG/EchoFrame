@@ -114,7 +114,7 @@ final class LumioAppStoragePlugin: NSObject, FlutterPlugin {
           let dictionary = value as? [String: Any] else {
       return nil
     }
-    return dictionary
+    return LumioMetadataRepair.library(dictionary)
   }
 
   private func writeJSON(_ value: [String: Any], to url: URL) throws {

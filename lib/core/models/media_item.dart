@@ -27,6 +27,43 @@ class LyricLine {
   }
 }
 
+class LyricTiming {
+  const LyricTiming({this.offsetMs = 0, this.lyricsSignature = ''});
+
+  static const limitMs = 30000;
+  final int offsetMs;
+  final String lyricsSignature;
+
+  static String signatureFor(List<LyricLine> lines) {
+    // 稳定的内容摘要仅用于判断歌词是否更换，不用于安全校验。
+    var hash = 0x811c9dc5;
+    for (final line in lines) {
+      for (final unit
+          in '${line.time.inMilliseconds}:${line.text.length}:${line.text}\n'
+              .codeUnits) {
+        hash = ((hash ^ unit) * 0x01000193) & 0xffffffff;
+      }
+    }
+    return '${lines.length}:${hash.toRadixString(16)}';
+  }
+
+  static LyricTiming fromJson(Object? value, List<LyricLine> lyrics) {
+    if (value is! Map || value['version'] != 1) return const LyricTiming();
+    final offset = _asInt(value['offsetMs']);
+    final signature = value['lyricsSignature']?.toString() ?? '';
+    if (offset.abs() > limitMs || signature != signatureFor(lyrics)) {
+      return const LyricTiming();
+    }
+    return LyricTiming(offsetMs: offset, lyricsSignature: signature);
+  }
+
+  Map<String, Object?> toJson() => {
+        'version': 1,
+        'offsetMs': offsetMs,
+        'lyricsSignature': lyricsSignature,
+      };
+}
+
 class SubtitleCue {
   const SubtitleCue({
     required this.start,
@@ -71,6 +108,7 @@ class MediaItem {
     this.isFavorite = false,
     this.lyrics = const <LyricLine>[],
     this.hasCustomLyrics = false,
+    this.lyricTiming = const LyricTiming(),
     this.subtitles = const <SubtitleCue>[],
     this.lastPosition = Duration.zero,
     this.resolution,
@@ -84,6 +122,10 @@ class MediaItem {
   });
 
   factory MediaItem.fromJson(Map<String, Object?> json) {
+    final lyrics = _asList(json['lyrics'])
+        .whereType<Map<Object?, Object?>>()
+        .map((value) => LyricLine.fromJson(value.cast<String, Object?>()))
+        .toList(growable: false);
     final kindName = json['kind']?.toString();
     final kind = MediaKind.values.firstWhere(
       (value) => value.name == kindName,
@@ -102,14 +144,8 @@ class MediaItem {
       accentColor: Color(_asInt(json['accentColor'])),
       playCount: _asInt(json['playCount']),
       isFavorite: json['isFavorite'] == true,
-      lyrics: _asList(json['lyrics'])
-          .whereType<Map<Object?, Object?>>()
-          .map(
-            (value) => LyricLine.fromJson(
-              value.cast<String, Object?>(),
-            ),
-          )
-          .toList(growable: false),
+      lyrics: lyrics,
+      lyricTiming: LyricTiming.fromJson(json['lyricTiming'], lyrics),
       hasCustomLyrics: json['hasCustomLyrics'] == true,
       subtitles: _asList(json['subtitles'])
           .whereType<Map<Object?, Object?>>()
@@ -145,6 +181,7 @@ class MediaItem {
   final bool isFavorite;
   final List<LyricLine> lyrics;
   final bool hasCustomLyrics;
+  final LyricTiming lyricTiming;
   final List<SubtitleCue> subtitles;
   final Duration lastPosition;
   final String? resolution;
@@ -187,6 +224,7 @@ class MediaItem {
     bool? isFavorite,
     List<LyricLine>? lyrics,
     bool? hasCustomLyrics,
+    LyricTiming? lyricTiming,
     List<SubtitleCue>? subtitles,
     Duration? lastPosition,
     String? resolution,
@@ -213,6 +251,13 @@ class MediaItem {
       isFavorite: isFavorite ?? this.isFavorite,
       lyrics: lyrics ?? this.lyrics,
       hasCustomLyrics: hasCustomLyrics ?? this.hasCustomLyrics,
+      lyricTiming: lyricTiming ??
+          (lyrics != null &&
+                  !identical(lyrics, this.lyrics) &&
+                  LyricTiming.signatureFor(lyrics) !=
+                      this.lyricTiming.lyricsSignature
+              ? const LyricTiming()
+              : this.lyricTiming),
       subtitles: subtitles ?? this.subtitles,
       lastPosition: lastPosition ?? this.lastPosition,
       resolution: resolution ?? this.resolution,
@@ -242,6 +287,7 @@ class MediaItem {
       'isFavorite': isFavorite,
       'lyrics': lyrics.map((line) => line.toJson()).toList(growable: false),
       'hasCustomLyrics': hasCustomLyrics,
+      'lyricTiming': lyricTiming.toJson(),
       'subtitles': subtitles.map((cue) => cue.toJson()).toList(growable: false),
       'lastPositionMs': lastPosition.inMilliseconds,
       'resolution': resolution,

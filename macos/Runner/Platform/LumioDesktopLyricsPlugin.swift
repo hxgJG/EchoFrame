@@ -59,6 +59,8 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
         ensurePanel()
         lyricsView?.applyAppearance(args)
         lyricsView?.setControlsEnabled(args["canControl"] as? Bool ?? false)
+        lyricsView?.calibrationMediaId = args["canCalibrate"] as? Bool == true
+          ? args["mediaId"] as? String : nil
         lyricsView?.update(
           title: String((args["title"] as? String ?? "忆光").prefix(300)),
           current: String((args["current"] as? String ?? "").prefix(1024)),
@@ -128,6 +130,15 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
     content.onPlaybackAction = { [weak self] action in
       guard let self, self.enabled, !self.locked, self.isAudio else { return }
       self.channel.invokeMethod("playbackAction", arguments: action)
+    }
+    content.onCalibrate = { [weak self] mediaId in
+      guard let self, self.enabled, !self.locked, self.isAudio else { return }
+      NSApp.activate(ignoringOtherApps: true)
+      if let mainWindow = NSApp.windows.first(where: { $0.contentViewController is FlutterViewController }) {
+        mainWindow.deminiaturize(nil)
+        mainWindow.makeKeyAndOrderFront(nil)
+      }
+      self.channel.invokeMethod("openLyricCalibration", arguments: mediaId)
     }
     window.contentView = content
     panel = window
@@ -213,6 +224,8 @@ private final class LyricsView: NSView {
   var onClose: (() -> Void)?
   var onLock: (() -> Void)?
   var onPlaybackAction: ((String) -> Void)?
+  var onCalibrate: ((String) -> Void)?
+  var calibrationMediaId: String?
   private let titleLabel = NSTextField(labelWithString: "忆光 · 桌面歌词")
   private let currentLabel = NSTextField(wrappingLabelWithString: "等待播放音乐…")
   private let nextLabel = NSTextField(labelWithString: "")
@@ -344,6 +357,22 @@ private final class LyricsView: NSView {
 
   override func mouseDown(with event: NSEvent) {
     if !locked { window?.performDrag(with: event) }
+  }
+
+  override func menu(for event: NSEvent) -> NSMenu? {
+    guard !locked, let mediaId = calibrationMediaId, !mediaId.isEmpty else { return nil }
+    let menu = NSMenu()
+    let item = NSMenuItem(title: "校准歌词（仅此歌曲）", action: #selector(calibrateLyrics(_:)), keyEquivalent: "")
+    item.target = self
+    item.representedObject = mediaId
+    menu.addItem(item)
+    return menu
+  }
+
+  @objc private func calibrateLyrics(_ sender: NSMenuItem) {
+    guard !locked, let mediaId = sender.representedObject as? String,
+          mediaId == calibrationMediaId else { return }
+    onCalibrate?(mediaId)
   }
 
   @objc private func lockLyrics() { onLock?() }

@@ -3,10 +3,12 @@ import 'dart:io' show Platform;
 import 'package:flutter/services.dart';
 
 import '../../core/lyrics/lrc_parser.dart';
+import '../../core/lyrics/lyrics_export.dart';
 import '../../core/models/media_item.dart';
 import '../../core/subtitles/ass_parser.dart';
 import '../../core/subtitles/srt_parser.dart';
 import 'lyrics_import.dart';
+import 'lyrics_export_result.dart';
 import 'media_file_operation.dart';
 import 'media_library_repository.dart';
 
@@ -16,6 +18,33 @@ class PlatformMediaLibraryRepository implements MediaLibraryRepository {
   }) : _channel = channel;
 
   final MethodChannel _channel;
+
+  @override
+  Future<LyricsExportResult> exportLyrics(LyricsExportFile file) async {
+    if (!Platform.isMacOS && !Platform.isAndroid) {
+      return const LyricsExportResult(
+          status: LyricsExportStatus.unsupported, message: '当前平台暂不支持歌词导出。');
+    }
+    try {
+      final raw =
+          await _channel.invokeMapMethod<Object?, Object?>('exportLyrics', {
+        'fileName': file.fileName,
+        'bytes': file.bytes,
+      });
+      return raw == null
+          ? const LyricsExportResult(
+              status: LyricsExportStatus.failed, message: '未收到导出结果。')
+          : LyricsExportResult.fromJson(raw);
+    } on MissingPluginException {
+      return const LyricsExportResult(
+          status: LyricsExportStatus.unsupported,
+          message: '当前版本未注册歌词导出，请更新应用。');
+    } on PlatformException catch (error) {
+      return LyricsExportResult(
+          status: LyricsExportStatus.failed,
+          message: error.message ?? '歌词导出失败。');
+    }
+  }
 
   bool get _isSupportedPlatform =>
       Platform.isAndroid ||

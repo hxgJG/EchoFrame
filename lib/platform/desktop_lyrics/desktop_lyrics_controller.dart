@@ -9,6 +9,7 @@ class DesktopLyricsController extends ChangeNotifier {
   bool get supported => Platform.isMacOS;
   bool enabled = false;
   bool locked = false;
+  ValueChanged<String>? onOpenCalibration;
   String? error;
   bool _disposed = false;
   bool _sending = false;
@@ -25,6 +26,14 @@ class DesktopLyricsController extends ChangeNotifier {
     if (!supported || _ready != null) return;
     _channel.setMethodCallHandler((call) async {
       if (_disposed) return;
+      if (call.method == 'openLyricCalibration' &&
+          enabled &&
+          !locked &&
+          call.arguments is String &&
+          call.arguments == _latest['mediaId'] &&
+          _latest['canCalibrate'] == true) {
+        onOpenCalibration?.call(call.arguments as String);
+      }
       if (call.method == 'playbackAction' && enabled && !locked) {
         switch (call.arguments) {
           case 'previous':

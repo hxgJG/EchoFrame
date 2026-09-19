@@ -7,6 +7,7 @@ import '../../core/models/lumio_settings.dart';
 import '../../core/models/media_item.dart';
 import '../search/search_page.dart';
 import '../../shared/widgets/media_tile.dart';
+import '../../shared/widgets/lyrics_export_action.dart';
 import '../../shared/widgets/section_header.dart';
 
 class MusicLibraryPage extends StatefulWidget {
@@ -595,6 +596,10 @@ class _SongMenu extends StatelessWidget {
         const PopupMenuItem(value: 'queue', child: Text('加入队列')),
         const PopupMenuItem(value: 'playlist', child: Text('加入播放列表')),
         const PopupMenuItem(value: 'share', child: Text('分享')),
+        PopupMenuItem(
+            value: 'exportLyrics',
+            enabled: item.lyrics.isNotEmpty && !state.isExportingLyrics,
+            child: const Text('导出歌词')),
         const PopupMenuItem(value: 'edit', child: Text('编辑信息')),
         const PopupMenuItem(value: 'renameFile', child: Text('重命名文件')),
         const PopupMenuItem(value: 'moveFile', child: Text('移动文件')),
@@ -618,6 +623,8 @@ class _SongMenu extends StatelessWidget {
             );
           case 'share':
             state.share(item);
+          case 'exportLyrics':
+            runLyricsExport(context, state, mediaId: item.id);
           case 'edit':
             _showMetadataDialog(context, state, item);
           case 'renameFile':

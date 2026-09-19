@@ -1,7 +1,6 @@
 import '../models/media_item.dart';
 
-final RegExp _timestampPattern =
-    RegExp(r'\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]');
+final RegExp _timestampPattern = RegExp(r'\[(\d+):(\d{2})(?:[.:](\d{1,3}))?\]');
 
 List<LyricLine> parseLrc(String text) {
   final lines = <LyricLine>[];

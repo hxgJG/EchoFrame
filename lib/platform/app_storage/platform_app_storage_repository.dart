@@ -45,26 +45,35 @@ class PlatformAppStorageRepository implements AppStorageRepository {
     Map<String, Object?> value, {
     required Set<AppStoragePartition> partitions,
   }) async {
-    if (!_isSupportedPlatform) {
-      return;
-    }
+    if (!_isSupportedPlatform) return;
     try {
-      await Future.wait(
-        partitions.map(
-          (partition) => _channel.invokeMethod<void>(
-            'savePartition',
-            <String, Object?>{
-              'partition': partition.name,
-              'value': appStoragePartitionValue(value, partition),
-            },
-          ),
-        ),
-      );
+      await saveChecked(value, partitions: partitions);
     } on MissingPluginException {
       return;
     } on PlatformException {
       return;
     }
+  }
+
+  // 显式保存交互需要知道写入结果；保留既有自动保存的容错行为。
+  Future<void> saveChecked(
+    Map<String, Object?> value, {
+    required Set<AppStoragePartition> partitions,
+  }) async {
+    if (!_isSupportedPlatform) {
+      throw UnsupportedError('当前平台不支持本地保存');
+    }
+    await Future.wait(
+      partitions.map(
+        (partition) => _channel.invokeMethod<void>(
+          'savePartition',
+          <String, Object?>{
+            'partition': partition.name,
+            'value': appStoragePartitionValue(value, partition),
+          },
+        ),
+      ),
+    );
   }
 
   @override
