@@ -8,12 +8,15 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
   private var lyricsView: LyricsView?
   private var enabled = false
   private var locked = false
+  private var transparency: Double = 0
   private var isAudio = true
   private var hasSnapshot = false
   private let enabledKey = "lumio.desktopLyrics.enabled"
   private let lockedKey = "lumio.desktopLyrics.locked"
   private let originKey = "lumio.desktopLyrics.origin"
   private let widthKey = "lumio.desktopLyrics.width"
+  private let transparencyKey = "lumio.desktopLyrics.transparency"
+  private let maximumTransparency: Double = 0.6
   private let minimumWidth: CGFloat = 360
   private let maximumWidth: CGFloat = 720
   private let panelHeight: CGFloat = 70
@@ -27,6 +30,9 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
     super.init()
     enabled = defaults.bool(forKey: enabledKey)
     locked = defaults.bool(forKey: lockedKey)
+    let savedTransparency = defaults.double(forKey: transparencyKey)
+    transparency = savedTransparency.isFinite
+      ? min(max(savedTransparency, 0), maximumTransparency) : 0
     registrar.addMethodCallDelegate(self, channel: channel)
     NotificationCenter.default.addObserver(
       self, selector: #selector(screensChanged),
@@ -42,6 +48,13 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
       guard let args = call.arguments as? [String: Any] else {
         result(FlutterError(code: "invalidArguments", message: "桌面歌词设置无效。", details: nil))
         return
+      }
+      if let rawValue = args["transparency"] {
+        guard let value = rawValue as? NSNumber, value.doubleValue.isFinite else {
+          result(FlutterError(code: "invalidArguments", message: "桌面歌词透明度无效。", details: nil))
+          return
+        }
+        transparency = min(max(value.doubleValue, 0), maximumTransparency)
       }
       if let value = args["enabled"] as? Bool { enabled = value }
       if let value = args["locked"] as? Bool { locked = value }
@@ -85,11 +98,14 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
     }
   }
 
-  private var settings: [String: Any] { ["enabled": enabled, "locked": locked] }
+  private var settings: [String: Any] {
+    ["enabled": enabled, "locked": locked, "transparency": transparency]
+  }
 
   private func persistSettings() {
     defaults.set(enabled, forKey: enabledKey)
     defaults.set(locked, forKey: lockedKey)
+    defaults.set(transparency, forKey: transparencyKey)
   }
 
   private func ensurePanel() {
@@ -108,6 +124,7 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
     window.isReleasedWhenClosed = false
     window.isOpaque = false
     window.backgroundColor = .clear
+    window.alphaValue = CGFloat(1 - transparency)
     window.hasShadow = true
     window.isMovableByWindowBackground = true
     window.minSize = NSSize(width: minimumWidth, height: panelHeight)
@@ -156,6 +173,7 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
   }
 
   private func reconcileVisibility() {
+    panel?.alphaValue = CGFloat(1 - transparency)
     guard enabled && isAudio && hasSnapshot else {
       panel?.orderOut(nil)
       return

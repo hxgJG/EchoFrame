@@ -5,6 +5,7 @@ import '../../app/theme.dart';
 import '../../app/theme_catalog.dart';
 import '../../core/models/lumio_settings.dart';
 import '../../core/models/media_item.dart';
+import '../../platform/desktop_lyrics/desktop_lyrics_controller.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/lyrics_export_action.dart';
 
@@ -126,6 +127,30 @@ class SettingsPage extends StatelessWidget {
                 onChanged: state.desktopLyrics.enabled
                     ? state.desktopLyrics.setLocked
                     : null,
+              ),
+              ListTile(
+                leading: const Icon(Icons.opacity_rounded),
+                title: Text(
+                    '整体透明度 · ${(state.desktopLyrics.transparency * 100).round()}%'),
+                subtitle: const Text('背景、歌词和按钮一起变透明。范围 0%–60%；0% 保留原有显示效果。'),
+                trailing: TextButton(
+                  onPressed: state.desktopLyrics.transparency !=
+                          DesktopLyricsController.defaultTransparency
+                      ? () => state.desktopLyrics.setTransparency(
+                          DesktopLyricsController.defaultTransparency)
+                      : null,
+                  child: const Text('恢复默认'),
+                ),
+              ),
+              Slider(
+                min: 0,
+                max: DesktopLyricsController.maximumTransparency,
+                divisions: 12,
+                label: '${(state.desktopLyrics.transparency * 100).round()}%',
+                semanticFormatterCallback: (value) =>
+                    '透明度 ${(value * 100).round()}%',
+                value: state.desktopLyrics.transparency,
+                onChanged: state.desktopLyrics.setTransparency,
               ),
               ListTile(
                 leading: const Icon(Icons.center_focus_strong_rounded),

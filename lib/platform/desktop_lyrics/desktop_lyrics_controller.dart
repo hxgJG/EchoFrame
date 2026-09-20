@@ -5,10 +5,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 class DesktopLyricsController extends ChangeNotifier {
+  static const double maximumTransparency = 0.6;
+  static const double defaultTransparency = 0;
   final MethodChannel _channel = const MethodChannel('lumio/desktop_lyrics');
   bool get supported => Platform.isMacOS;
   bool enabled = false;
   bool locked = false;
+  double transparency = defaultTransparency;
   ValueChanged<String>? onOpenCalibration;
   String? error;
   bool _disposed = false;
@@ -63,6 +66,14 @@ class DesktopLyricsController extends ChangeNotifier {
 
   Future<void> resetPosition() => _configure('resetPosition');
 
+  Future<void> setTransparency(double value) async {
+    if (!value.isFinite) return;
+    await _ready;
+    await _configure('configure', {
+      'transparency': value.clamp(0.0, maximumTransparency).toDouble(),
+    });
+  }
+
   Future<void> _configure(String method, [Map<String, Object>? args]) async {
     if (!supported || _disposed) return;
     try {
@@ -83,6 +94,10 @@ class DesktopLyricsController extends ChangeNotifier {
   void _applySettings(Map<Object?, Object?> settings) {
     enabled = settings['enabled'] == true;
     locked = settings['locked'] == true;
+    final value = settings['transparency'];
+    transparency = value is num && value.isFinite
+        ? value.toDouble().clamp(0.0, maximumTransparency).toDouble()
+        : defaultTransparency;
     _sent = null;
     notifyListeners();
     unawaited(_flush());
