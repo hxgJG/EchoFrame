@@ -244,6 +244,8 @@ private final class LyricsView: NSView {
   private let playButton = NSButton(title: "", target: nil, action: nil)
   private let nextButton = NSButton(title: "", target: nil, action: nil)
   private var locked = false
+  private var isHovered = false
+  private var hoverTrackingArea: NSTrackingArea?
   private var clickStart: NSEvent?
   private var didDrag = false
   override var isFlipped: Bool { true }
@@ -308,9 +310,46 @@ private final class LyricsView: NSView {
       button.isEnabled = false
       addSubview(button)
     }
+    updateControlsVisibility()
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  override func updateTrackingAreas() {
+    super.updateTrackingAreas()
+    if let hoverTrackingArea { removeTrackingArea(hoverTrackingArea) }
+    let area = NSTrackingArea(rect: .zero,
+      options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+      owner: self, userInfo: nil)
+    addTrackingArea(area)
+    hoverTrackingArea = area
+    refreshHoverState()
+  }
+
+  override func mouseEntered(with event: NSEvent) {
+    isHovered = true
+    updateControlsVisibility()
+  }
+
+  override func mouseExited(with event: NSEvent) {
+    isHovered = false
+    updateControlsVisibility()
+  }
+
+  private func refreshHoverState() {
+    if let window, window.isVisible {
+      isHovered = bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+    } else {
+      isHovered = false
+    }
+    updateControlsVisibility()
+  }
+
+  private func updateControlsVisibility() {
+    for button in [previousButton, playButton, nextButton, lockButton, closeButton] {
+      button.isHidden = locked || !isHovered
+    }
+  }
 
   override func layout() {
     super.layout()
@@ -368,9 +407,7 @@ private final class LyricsView: NSView {
 
   func setLocked(_ value: Bool) {
     locked = value
-    lockButton.isHidden = value
-    closeButton.isHidden = value
-    for button in [previousButton, playButton, nextButton] { button.isHidden = value }
+    refreshHoverState()
     needsLayout = true
   }
 
