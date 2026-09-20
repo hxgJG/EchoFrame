@@ -326,7 +326,7 @@ private final class LyricsView: NSView {
   }
 
   func update(title: String, current: String, next: String, playing: Bool, locked: Bool) {
-    titleLabel.stringValue = "\(playing ? "正在播放" : "已暂停") · \(title)"
+    titleLabel.stringValue = title
     currentLabel.stringValue = current
     nextLabel.stringValue = next
     let playLabel = playing ? "暂停" : "播放"
