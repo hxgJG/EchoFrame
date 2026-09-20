@@ -16,7 +16,7 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
   private let widthKey = "lumio.desktopLyrics.width"
   private let minimumWidth: CGFloat = 360
   private let maximumWidth: CGFloat = 720
-  private let panelHeight: CGFloat = 87
+  private let panelHeight: CGFloat = 70
 
   static func register(with registrar: FlutterPluginRegistrar) {}
 
@@ -112,7 +112,7 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
     window.isMovableByWindowBackground = true
     window.minSize = NSSize(width: minimumWidth, height: panelHeight)
     window.maxSize = NSSize(width: maximumWidth, height: panelHeight)
-    let content = LyricsView(frame: NSRect(x: 0, y: 0, width: 720, height: 87))
+    let content = LyricsView(frame: NSRect(x: 0, y: 0, width: maximumWidth, height: panelHeight))
     content.onClose = { [weak self] in
       guard let self else { return }
       self.enabled = false
@@ -267,12 +267,12 @@ private final class LyricsView: NSView {
     titleLabel.font = .systemFont(ofSize: 11, weight: .medium)
     titleLabel.textColor = ink.withAlphaComponent(0.8)
     titleLabel.lineBreakMode = .byTruncatingTail
-    currentLabel.font = .systemFont(ofSize: 18, weight: .semibold)
+    currentLabel.font = .systemFont(ofSize: 14, weight: .semibold)
     currentLabel.textColor = ink
     currentLabel.alignment = .center
     currentLabel.maximumNumberOfLines = 1
     currentLabel.lineBreakMode = .byTruncatingTail
-    nextLabel.font = .systemFont(ofSize: 13, weight: .medium)
+    nextLabel.font = .systemFont(ofSize: 11, weight: .medium)
     nextLabel.textColor = ink.withAlphaComponent(0.7)
     nextLabel.alignment = .center
     nextLabel.lineBreakMode = .byTruncatingTail
@@ -321,8 +321,8 @@ private final class LyricsView: NSView {
     nextButton.frame = NSRect(x: bounds.width - 158, y: 3, width: 28, height: 22)
     lockButton.frame = NSRect(x: bounds.width - 122, y: 3, width: 52, height: 22)
     closeButton.frame = NSRect(x: bounds.width - 64, y: 3, width: 52, height: 22)
-    currentLabel.frame = NSRect(x: 16, y: 29, width: bounds.width - 32, height: 24)
-    nextLabel.frame = NSRect(x: 16, y: 57, width: bounds.width - 32, height: 19)
+    currentLabel.frame = NSRect(x: 16, y: 27, width: bounds.width - 32, height: 20)
+    nextLabel.frame = NSRect(x: 16, y: 49, width: bounds.width - 32, height: 16)
   }
 
   func update(title: String, current: String, next: String, playing: Bool, locked: Bool) {
