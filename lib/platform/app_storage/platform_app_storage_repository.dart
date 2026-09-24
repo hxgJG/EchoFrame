@@ -160,6 +160,10 @@ Map<String, Object?> appStoragePartitionValue(
         'schemaVersion': value['schemaVersion'],
         'audioItems': value['audioItems'],
         'videoItems': value['videoItems'],
+        if (value.containsKey('lyricLibrary'))
+          'lyricLibrary': value['lyricLibrary'],
+        if (value.containsKey('lyricLibraryUndo'))
+          'lyricLibraryUndo': value['lyricLibraryUndo'],
       },
     AppStoragePartition.playlists => <String, Object?>{
         'schemaVersion': value['schemaVersion'],
@@ -169,6 +173,8 @@ Map<String, Object?> appStoragePartitionValue(
         for (final entry in value.entries)
           if (entry.key != 'audioItems' &&
               entry.key != 'videoItems' &&
+              entry.key != 'lyricLibrary' &&
+              entry.key != 'lyricLibraryUndo' &&
               entry.key != 'playlists')
             entry.key: entry.value,
       },

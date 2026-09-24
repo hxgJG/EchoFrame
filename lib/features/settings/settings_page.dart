@@ -6,6 +6,7 @@ import '../../app/theme_catalog.dart';
 import '../../core/models/lumio_settings.dart';
 import '../../core/models/media_item.dart';
 import '../../platform/desktop_lyrics/desktop_lyrics_controller.dart';
+import '../music/lyric_library_page.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/lyrics_export_action.dart';
 
@@ -672,6 +673,16 @@ class SettingsPage extends StatelessWidget {
                     !state.isExportingLyrics && state.exportableLyricsCount > 0,
                 onTap: () => runLyricsExport(context, state),
               ),
+              if (state.lyricPackageSupported)
+                ListTile(
+                  leading: const Icon(Icons.library_music_outlined),
+                  title: const Text('歌词库与跨设备迁移'),
+                  subtitle: const Text('导入/导出歌词包、选择覆盖方式；未匹配歌词保留，后续扫描自动关联'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                          builder: (_) => LyricLibraryPage(state: state))),
+                ),
               ListTile(
                 leading: const Icon(Icons.backup_rounded),
                 title: const Text('备份与恢复'),

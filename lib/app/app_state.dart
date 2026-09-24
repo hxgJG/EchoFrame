@@ -13,6 +13,8 @@ import '../core/lyrics/lrc_parser.dart';
 import '../core/lyrics/lyric_calibration.dart';
 import '../core/lyrics/lyric_draft.dart';
 import '../core/lyrics/lyrics_export.dart';
+import '../core/lyrics/lyric_library.dart';
+import '../platform/media_library/lyric_package_repository.dart';
 import '../core/playback/playback_interruption_controller.dart';
 import '../platform/app_storage/app_storage_repository.dart';
 import '../platform/app_storage/platform_app_storage_repository.dart';
@@ -29,6 +31,8 @@ import '../platform/subtitle_workbench/subtitle_workbench_repository.dart';
 import '../platform/playback/playback_repository.dart';
 import '../platform/playback/platform_playback_repository.dart';
 import 'seed_data.dart';
+
+part 'lyric_library_state.dart';
 
 enum AppSection { home, music, playlists, video, settings }
 
@@ -107,6 +111,14 @@ class LumioAppState extends ChangeNotifier {
   Duration _position = const Duration(minutes: 1, seconds: 12);
   bool _isScanningLibrary = false;
   bool _isExportingLyrics = false;
+  List<LyricLibraryEntry> _lyricLibrary = [];
+  Map<String, Object?>? _lyricLibraryUndo;
+  bool _lyricLibraryBusy = false;
+  bool _lyricLibraryReady = false;
+  String? _lyricLibraryError;
+  Object? _unreadableLyricLibrary;
+  Map<String, String> _lyricFingerprints = {};
+  void _notifyLyricLibrary() => notifyListeners();
   bool _isUpdatingMediaSources = false;
   List<MediaSource> _mediaSources = const <MediaSource>[];
   MediaLibraryScanStatus? _lastScanStatus;
@@ -1191,6 +1203,7 @@ class LumioAppState extends ChangeNotifier {
     _replaceItem(
       current.copyWith(
         title: nextTitle,
+        lyricMatchAliases: rememberLyricAlias(current),
         artist: nextArtist == null || nextArtist.isEmpty
             ? current.artist
             : nextArtist,
@@ -1576,14 +1589,14 @@ class LumioAppState extends ChangeNotifier {
   }
 
   Future<void> scanMediaLibrary() async {
-    if (_isScanningLibrary) {
+    if (_isScanningLibrary || _lyricLibraryBusy) {
       return;
     }
     _isScanningLibrary = true;
     _libraryStatusMessage = '正在扫描或导入本机音频和视频...';
     notifyListeners();
 
-    final result = await _mediaLibraryRepository.scan(
+    var result = await _mediaLibraryRepository.scan(
       MediaLibraryScanFilter(
         minimumAudioDuration: _settings.minimumAudioDuration,
         includedFolders: _settings.includedFolders,
@@ -1591,6 +1604,7 @@ class LumioAppState extends ChangeNotifier {
       ),
     );
     if (result.status == MediaLibraryScanStatus.completed) {
+      result = await _fingerprintLyricScan(result);
       _stopPlayback();
     }
     _applyScanResult(
@@ -1808,6 +1822,7 @@ class LumioAppState extends ChangeNotifier {
   }
 
   Future<void> restoreLatestBackup() async {
+    if (_lyricLibraryBusy || _isScanningLibrary) return;
     final restored = await _appStorageRepository.restoreLatestBackup();
     if (restored != null &&
         platformCapabilities.supportsSubtitleEditing &&
@@ -1833,21 +1848,27 @@ class LumioAppState extends ChangeNotifier {
   }
 
   Future<void> _restorePersistedState() async {
-    final persisted = await _appStorageRepository.load();
-    if (persisted != null && _applyPersistedState(persisted)) {
-      await _refreshMediaSources(notify: false);
-      notifyListeners();
-      return;
+    try {
+      final persisted = await _appStorageRepository.load();
+      if (persisted != null && _applyPersistedState(persisted)) {
+        await _refreshMediaSources(notify: false);
+        notifyListeners();
+        return;
+      }
+      await _restoreLastScan();
+      await _refreshMediaSources();
+    } finally {
+      _lyricLibraryReady = true;
+      if (!_disposed) notifyListeners();
     }
-    await _restoreLastScan();
-    await _refreshMediaSources();
   }
 
   Future<void> _restoreLastScan() async {
-    final result = await _mediaLibraryRepository.restoreLastScan();
+    var result = await _mediaLibraryRepository.restoreLastScan();
     if (result.status != MediaLibraryScanStatus.completed || !result.hasMedia) {
       return;
     }
+    result = await _fingerprintLyricScan(result);
     _applyScanResult(result, emptyCompletedMessage: '');
     _libraryStatusMessage =
         '已恢复上次扫描：${_audioItems.length} 首音频、${_videoItems.length} 个视频。';
@@ -1861,6 +1882,7 @@ class LumioAppState extends ChangeNotifier {
   }
 
   bool _applyPersistedState(Map<String, Object?> json) {
+    _restoreLyricLibrary(json);
     _hiddenMediaIds = _asStringList(json['hiddenMediaIds']).toSet();
     final audioItems = visibleMediaItems(
       _dropRemovedSeedItems(_parseMediaItems(json['audioItems'])),
@@ -2276,6 +2298,14 @@ class LumioAppState extends ChangeNotifier {
       snapshot.addAll(<String, Object?>{
         'audioItems': _audioItems.map((item) => item.toJson()).toList(),
         'videoItems': _videoItems.map((item) => item.toJson()).toList(),
+        'lyricLibrary': _unreadableLyricLibrary ??
+            {
+              'version': 1,
+              'entries': _lyricLibrary
+                  .map((entry) => entry.toJson(local: true))
+                  .toList(),
+            },
+        'lyricLibraryUndo': _lyricLibraryUndo,
       });
     }
     if (partitions.contains(AppStoragePartition.playlists)) {
@@ -2311,6 +2341,7 @@ class LumioAppState extends ChangeNotifier {
     _lastScanStatus = result.status;
     switch (result.status) {
       case MediaLibraryScanStatus.completed:
+        final previousPaths = _audioItems.map((item) => item.path).toSet();
         _audioItems = visibleMediaItems(
           _mergePersistedMediaMetadata(result.audioItems),
           _hiddenMediaIds,
@@ -2319,6 +2350,11 @@ class LumioAppState extends ChangeNotifier {
           _mergePersistedMediaMetadata(result.videoItems),
           _hiddenMediaIds,
         );
+        final matchedLyrics = _applyPendingLyricLibrary(
+            newPaths: _audioItems
+                .map((item) => item.path)
+                .toSet()
+                .difference(previousPaths));
         _currentItem = _audioItems.isNotEmpty
             ? _audioItems.first
             : _videoItems.isNotEmpty
@@ -2334,6 +2370,8 @@ class LumioAppState extends ChangeNotifier {
               ? result.message
               : emptyCompletedMessage;
         }
+        if (matchedLyrics > 0)
+          _libraryStatusMessage += ' 已自动关联 $matchedLyrics 首歌词包歌词。';
       case MediaLibraryScanStatus.cancelled:
         _libraryStatusMessage = result.message;
       case MediaLibraryScanStatus.permissionDenied:
@@ -2359,6 +2397,11 @@ class LumioAppState extends ChangeNotifier {
         title: previous.title,
         artist: previous.artist,
         album: previous.album,
+        lyricMatchAliases: rememberLyricAlias(previous, additional: {
+          'title': item.title,
+          'artist': item.artist,
+          'album': item.album,
+        }),
         playCount: previous.playCount,
         isFavorite: previous.isFavorite,
         lastPosition: previous.lastPosition,

@@ -110,6 +110,7 @@ class MediaItem {
     this.lyrics = const <LyricLine>[],
     this.hasCustomLyrics = false,
     this.lyricTiming = const LyricTiming(),
+    this.lyricMatchAliases = const [],
     this.lyricDraft,
     this.subtitles = const <SubtitleCue>[],
     this.subtitleState = const <String, Object?>{},
@@ -149,6 +150,11 @@ class MediaItem {
       isFavorite: json['isFavorite'] == true,
       lyrics: lyrics,
       lyricTiming: LyricTiming.fromJson(json['lyricTiming'], lyrics),
+      lyricMatchAliases: _asList(json['lyricMatchAliases'])
+          .whereType<Map>()
+          .take(32)
+          .map((e) => Map<String, String>.from(e))
+          .toList(),
       lyricDraft: LyricDraft.fromJson(json['lyricDraft']),
       hasCustomLyrics: json['hasCustomLyrics'] == true,
       subtitleState: json['subtitleState'] is Map
@@ -189,6 +195,7 @@ class MediaItem {
   final List<LyricLine> lyrics;
   final bool hasCustomLyrics;
   final LyricTiming lyricTiming;
+  final List<Map<String, String>> lyricMatchAliases;
   final LyricDraft? lyricDraft;
   final List<SubtitleCue> subtitles;
   final Map<String, Object?> subtitleState;
@@ -234,6 +241,7 @@ class MediaItem {
     List<LyricLine>? lyrics,
     bool? hasCustomLyrics,
     LyricTiming? lyricTiming,
+    List<Map<String, String>>? lyricMatchAliases,
     LyricDraft? lyricDraft,
     bool clearLyricDraft = false,
     List<SubtitleCue>? subtitles,
@@ -263,6 +271,7 @@ class MediaItem {
       isFavorite: isFavorite ?? this.isFavorite,
       lyrics: lyrics ?? this.lyrics,
       hasCustomLyrics: hasCustomLyrics ?? this.hasCustomLyrics,
+      lyricMatchAliases: lyricMatchAliases ?? this.lyricMatchAliases,
       lyricDraft: clearLyricDraft ? null : lyricDraft ?? this.lyricDraft,
       lyricTiming: lyricTiming ??
           (lyrics != null &&
@@ -302,6 +311,7 @@ class MediaItem {
       'lyrics': lyrics.map((line) => line.toJson()).toList(growable: false),
       'hasCustomLyrics': hasCustomLyrics,
       'lyricTiming': lyricTiming.toJson(),
+      if (lyricMatchAliases.isNotEmpty) 'lyricMatchAliases': lyricMatchAliases,
       if (lyricDraft != null) 'lyricDraft': lyricDraft!.toJson(),
       'subtitles': subtitles.map((cue) => cue.toJson()).toList(growable: false),
       if (subtitleState.isNotEmpty) 'subtitleState': subtitleState,

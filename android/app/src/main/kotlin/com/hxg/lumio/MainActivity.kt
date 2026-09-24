@@ -56,6 +56,7 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.view.TextureRegistry
 import java.io.File
 import java.io.ByteArrayOutputStream
+import java.security.MessageDigest
 import java.util.concurrent.Executors
 import org.json.JSONArray
 import org.json.JSONObject
@@ -96,6 +97,7 @@ class MainActivity : FlutterActivity() {
     private var pendingFileOperation: PendingMediaFileOperation? = null
     private var pendingLyricsImportResult: MethodChannel.Result? = null
     private var pendingLyricsPlainText = false
+    private var pendingLyricsPackage = false
     private var playbackChannel: MethodChannel? = null
     private var mediaControllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
@@ -207,6 +209,8 @@ class MainActivity : FlutterActivity() {
                     "performFileOperation" -> performMediaFileOperation(call.arguments, result)
                     "importLyrics" -> importLyrics(result)
                     "importLyricsText" -> importLyrics(result, true)
+                    "importLyricsPackage" -> importLyrics(result, packageFile = true)
+                    "lyricAudioFingerprints" -> lyricAudioFingerprints(call.arguments, result)
                     "exportLyrics" -> exportLyrics(call.arguments, result)
                     else -> result.notImplemented()
                 }
@@ -763,20 +767,21 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun importLyrics(result: MethodChannel.Result, plainText: Boolean = false) {
+    private fun importLyrics(result: MethodChannel.Result, plainText: Boolean = false, packageFile: Boolean = false) {
         if (pendingLyricsImportResult != null) {
             result.success(lyricsImportResult("failed", "已有歌词文件正在选择中。"))
             return
         }
         pendingLyricsImportResult = result
         pendingLyricsPlainText = plainText
+        pendingLyricsPackage = packageFile
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "*/*"
         }
         try {
             startActivityForResult(
-                Intent.createChooser(intent, if (plainText) "选择 TXT 歌词文本" else "选择 LRC 歌词文件"),
+                Intent.createChooser(intent, if (packageFile) "选择 ZIP 歌词包" else if (plainText) "选择 TXT 歌词文本" else "选择 LRC 歌词文件"),
                 lyricsPickerRequestCode,
             )
         } catch (error: Exception) {
@@ -787,6 +792,45 @@ class MainActivity : FlutterActivity() {
                     error.message ?: "无法打开歌词文件选择器。",
                 ),
             )
+        }
+    }
+
+    private fun lyricAudioFingerprints(arguments: Any?, result: MethodChannel.Result) {
+        val items = (arguments as? Map<*, *>)?.get("items") as? List<*> ?: emptyList<Any>()
+        if (items.size > 5000) { result.error("invalidArguments", "单次最多检查 5000 首音频。", null); return }
+        mediaScanExecutor.execute {
+            val hashes = mutableMapOf<String, String>()
+            for (raw in items) {
+                val item = raw as? Map<*, *> ?: continue
+                val id = item["id"] as? String ?: continue
+                val path = item["path"] as? String ?: continue
+                val uri = mediaStoreUri(id, "audio") ?: continue
+                try {
+                    fun identity(): Pair<Long, Long>? = contentResolver.query(uri,
+                        arrayOf(MediaStore.MediaColumns.SIZE, MediaStore.MediaColumns.DATE_MODIFIED),
+                        null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) Pair(cursor.getLong(0), cursor.getLong(1)) else null
+                    }
+                    val before = identity() ?: continue
+                    if (before.first <= 0 || before.first > 512L * 1024 * 1024) continue
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    var count = 0L
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        val buffer = ByteArray(256 * 1024)
+                        while (true) {
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            count += n
+                            if (count > 512L * 1024 * 1024) break
+                            digest.update(buffer, 0, n)
+                        }
+                    }
+                    if (count == before.first && before == identity()) {
+                        hashes[path] = "sha256:" + digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+                    }
+                } catch (_: Exception) { /* 无授权或文件变化时退回名称/别名匹配。 */ }
+            }
+            runOnUiThread { result.success(hashes) }
         }
     }
 
@@ -846,7 +890,8 @@ class MainActivity : FlutterActivity() {
 
     private fun completeLyricsImport(resultCode: Int, data: Intent?) {
         val result = pendingLyricsImportResult ?: return
-        val extension = if (pendingLyricsPlainText) ".txt" else ".lrc"
+        val packageFile = pendingLyricsPackage
+        val extension = if (packageFile) ".zip" else if (pendingLyricsPlainText) ".txt" else ".lrc"
         pendingLyricsImportResult = null
         if (resultCode != Activity.RESULT_OK || data?.data == null) {
             result.success(lyricsImportResult("cancelled", "已取消选择歌词文件。"))
@@ -858,6 +903,19 @@ class MainActivity : FlutterActivity() {
                 val fileName = queryDisplayName(uri)
                 if (!fileName.endsWith(extension, ignoreCase = true)) {
                     lyricsImportResult("failed", "请选择 $extension 格式的歌词文件。")
+                } else if (packageFile) {
+                    val bytes = contentResolver.openInputStream(uri)?.use { input ->
+                        val output = ByteArrayOutputStream()
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            require(output.size() + count <= 32 * 1024 * 1024) { "歌词包不能超过 32 MiB。" }
+                            output.write(buffer, 0, count)
+                        }
+                        output.toByteArray()
+                    } ?: throw IllegalStateException("无法打开歌词包。")
+                    mapOf("status" to "completed", "fileName" to fileName, "bytes" to bytes)
                 } else {
                     val text = readLyricsText(uri)
                     lyricsImportResult(
@@ -1115,7 +1173,9 @@ class MainActivity : FlutterActivity() {
                 return
             }
             val value = values["value"] as? Map<*, *> ?: emptyMap<String, Any?>()
-            appStateStorage().encode(partitionKey(partition), JSONObject(value).toString())
+            check(appStateStorage().encode(partitionKey(partition), JSONObject(value).toString())) {
+                "本地存储写入失败。"
+            }
             result.success(null)
         } catch (error: Exception) {
             result.error("saveFailed", error.message ?: "Save app state failed.", null)
@@ -1993,10 +2053,10 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun saveAppStatePartitions(value: Map<*, *>) {
-        val libraryKeys = setOf("schemaVersion", "audioItems", "videoItems")
+        val libraryKeys = setOf("schemaVersion", "audioItems", "videoItems", "lyricLibrary", "lyricLibraryUndo")
         val playlistKeys = setOf("schemaVersion", "playlists")
         val session = value.filterKeys {
-            it?.toString() !in setOf("audioItems", "videoItems", "playlists")
+            it?.toString() !in setOf("audioItems", "videoItems", "playlists", "lyricLibrary", "lyricLibraryUndo")
         }
         val library = value.filterKeys { it?.toString() in libraryKeys }
         val playlists = value.filterKeys { it?.toString() in playlistKeys }

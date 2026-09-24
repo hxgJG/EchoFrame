@@ -128,6 +128,39 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
       presentLyricsPicker(result: result)
     case "importLyricsText":
       presentLyricsPicker(result: result, plainText: true)
+    case "importLyricsPackage":
+      presentLyricsPackagePicker(result: result)
+    case "lyricAudioFingerprints":
+      let items = (call.arguments as? [String: Any])?["items"] as? [[String: Any]] ?? []
+      guard items.count <= 5000 else { result(invalidArguments("单次最多检查 5000 首音频。")); return }
+      queue.async {
+        var hashes: [String: String] = [:]
+        for item in items {
+          guard let path = item["path"] as? String,
+                self.audioExtensions.contains(URL(fileURLWithPath: path).pathExtension.lowercased()) else { continue }
+          let scope = self.bookmarkStore.startAccess(forFilePath: path)
+          defer { scope?.stopAccessingSecurityScopedResource() }
+          do {
+            let url = URL(fileURLWithPath: path)
+            let before = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+            guard let size = before.fileSize, size > 0, size <= 512 * 1024 * 1024 else { continue }
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            var digest = SHA256()
+            var count = 0
+            while let chunk = try handle.read(upToCount: 256 * 1024), !chunk.isEmpty {
+              count += chunk.count
+              if count > 512 * 1024 * 1024 { break }
+              digest.update(data: chunk)
+            }
+            let after = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+            guard count == size, before.fileSize == after.fileSize,
+                  before.contentModificationDate == after.contentModificationDate else { continue }
+            hashes[path] = "sha256:" + digest.finalize().map { String(format: "%02x", $0) }.joined()
+          } catch { continue }
+        }
+        self.finish(result, value: hashes)
+      }
     case "exportLyrics":
       exportLyrics(call.arguments, result: result)
     default:
@@ -183,6 +216,39 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
     } else {
       completion(panel.runModal())
     }
+  }
+
+  private func presentLyricsPackagePicker(result: @escaping FlutterResult) {
+    let panel = NSOpenPanel()
+    panel.title = "导入跨设备歌词包"
+    panel.allowedContentTypes = [.zip]
+    panel.allowsMultipleSelection = false
+    panel.canChooseDirectories = false
+    let completion: (NSApplication.ModalResponse) -> Void = { response in
+      guard response == .OK, let url = panel.url else {
+        result(["status": "cancelled"])
+        return
+      }
+      let scoped = url.startAccessingSecurityScopedResource()
+      self.queue.async {
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        do {
+          let handle = try FileHandle(forReadingFrom: url)
+          defer { try? handle.close() }
+          let data = try handle.read(upToCount: 32 * 1024 * 1024 + 1) ?? Data()
+          guard !data.isEmpty, data.count <= 32 * 1024 * 1024 else {
+            self.finish(result, value: ["status": "failed", "message": "歌词包为空或超过 32 MiB。"])
+            return
+          }
+          self.finish(result, value: ["status": "completed", "fileName": url.lastPathComponent,
+            "bytes": FlutterStandardTypedData(bytes: data)])
+        } catch {
+          self.finish(result, value: ["status": "failed", "message": "无法读取歌词包：\(error.localizedDescription)"])
+        }
+      }
+    }
+    if let window { panel.beginSheetModal(for: window, completionHandler: completion) }
+    else { completion(panel.runModal()) }
   }
 
   private func presentSourcePicker(result: @escaping FlutterResult) {
