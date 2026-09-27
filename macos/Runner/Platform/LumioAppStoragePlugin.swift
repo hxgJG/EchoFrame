@@ -32,6 +32,33 @@ final class LumioAppStoragePlugin: NSObject, FlutterPlugin {
 
   func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
+    case "transferStorage":
+      queue.async { [weak self] in
+        do {
+          guard let self else { return }
+          // Receiving media must never silently fall back to a cache/temp path.
+          let support = try FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: true
+          )
+          let root = support.appendingPathComponent("Lumio/device_transfer", isDirectory: true)
+          try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+          for name in ["jobs", "partial"] {
+            var directory = root.appendingPathComponent(name, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try directory.setResourceValues(values)
+          }
+          let attributes = try FileManager.default.attributesOfFileSystem(forPath: root.path)
+          guard let available = attributes[.systemFreeSize] as? NSNumber else {
+            throw CocoaError(.fileReadUnknown)
+          }
+          self.finish(result, value: ["path": root.path, "availableBytes": available.int64Value])
+        } catch {
+          self?.finish(result, value: self?.storageError(error))
+        }
+      }
     case "loadPartition":
       guard let partition = partition(from: call.arguments) else {
         result(invalidArguments("缺少存储分区。"))

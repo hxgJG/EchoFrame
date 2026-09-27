@@ -15,11 +15,13 @@ extension LyricLibraryState on LumioAppState {
         .where((e) => e.active && e.fingerprint.isNotEmpty)
         .map((e) => e.fileSize)
         .toSet();
-    _lyricFingerprints = await LyricPackageRepository().fingerprints(result
-        .audioItems
-        .where((e) => sizes.contains(e.fileSizeBytes))
-        .take(5000)
-        .toList());
+    _lyricFingerprints = {
+      ..._receivedFingerprints,
+      ...await LyricPackageRepository().fingerprints(result.audioItems
+          .where((e) => sizes.contains(e.fileSizeBytes))
+          .take(5000)
+          .toList())
+    };
     return result;
   }
 

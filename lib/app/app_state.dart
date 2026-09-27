@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
+
+import 'package:crypto/crypto.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show compute;
@@ -31,8 +34,15 @@ import '../platform/subtitle_workbench/subtitle_workbench_repository.dart';
 import '../platform/playback/playback_repository.dart';
 import '../platform/playback/platform_playback_repository.dart';
 import 'seed_data.dart';
+import '../core/device_transfer/transfer_protocol.dart';
+import '../platform/device_transfer/device_transfer_controller.dart';
+import '../platform/device_transfer/received_transfer_store.dart';
+import '../platform/device_transfer/platform_transfer_storage.dart';
+import '../platform/device_transfer/shared_resource_reader.dart';
+import '../platform/device_transfer/transfer_identity.dart';
 
 part 'lyric_library_state.dart';
+part 'device_transfer_state.dart';
 
 enum AppSection { home, music, playlists, video, settings }
 
@@ -70,6 +80,11 @@ class LumioAppState extends ChangeNotifier {
       onNext: next,
     );
     _restorePersistedState();
+    if (Platform.isMacOS || Platform.isAndroid) {
+      // Generate only the local identity at startup; never start sharing here.
+      unawaited(TransferIdentity.load().then<void>((_) {},
+          onError: (Object _, StackTrace __) {}));
+    }
   }
 
   final MediaLibraryRepository _mediaLibraryRepository;
@@ -118,7 +133,14 @@ class LumioAppState extends ChangeNotifier {
   String? _lyricLibraryError;
   Object? _unreadableLyricLibrary;
   Map<String, String> _lyricFingerprints = {};
+  final Map<String, MediaItem> _receivedMedia = {};
+  final Map<String, String> _receivedDigests = {};
+  final Map<String, String> _appliedTransfers = {};
+  DeviceTransferController? _deviceTransfer;
+  DeviceTransferController get deviceTransfer =>
+      _deviceTransfer ??= DeviceTransferController(this);
   void _notifyLyricLibrary() => notifyListeners();
+  void _notifyTransferLibrary() => notifyListeners();
   bool _isUpdatingMediaSources = false;
   List<MediaSource> _mediaSources = const <MediaSource>[];
   MediaLibraryScanStatus? _lastScanStatus;
@@ -1851,6 +1873,7 @@ class LumioAppState extends ChangeNotifier {
     try {
       final persisted = await _appStorageRepository.load();
       if (persisted != null && _applyPersistedState(persisted)) {
+        await _rebaseReceivedMedia();
         await _refreshMediaSources(notify: false);
         notifyListeners();
         return;
@@ -1883,6 +1906,7 @@ class LumioAppState extends ChangeNotifier {
 
   bool _applyPersistedState(Map<String, Object?> json) {
     _restoreLyricLibrary(json);
+    _restoreTransferIndex(json['receivedMedia']);
     _hiddenMediaIds = _asStringList(json['hiddenMediaIds']).toSet();
     final audioItems = visibleMediaItems(
       _dropRemovedSeedItems(_parseMediaItems(json['audioItems'])),
@@ -2306,6 +2330,7 @@ class LumioAppState extends ChangeNotifier {
                   .toList(),
             },
         'lyricLibraryUndo': _lyricLibraryUndo,
+        'receivedMedia': _transferIndexSnapshot(),
       });
     }
     if (partitions.contains(AppStoragePartition.playlists)) {
@@ -2343,11 +2368,19 @@ class LumioAppState extends ChangeNotifier {
       case MediaLibraryScanStatus.completed:
         final previousPaths = _audioItems.map((item) => item.path).toSet();
         _audioItems = visibleMediaItems(
-          _mergePersistedMediaMetadata(result.audioItems),
+          [
+            ..._mergePersistedMediaMetadata(result.audioItems),
+            ..._receivedMedia.values
+                .where((item) => item.kind == MediaKind.audio)
+          ],
           _hiddenMediaIds,
         );
         _videoItems = visibleMediaItems(
-          _mergePersistedMediaMetadata(result.videoItems),
+          [
+            ..._mergePersistedMediaMetadata(result.videoItems),
+            ..._receivedMedia.values
+                .where((item) => item.kind == MediaKind.video)
+          ],
           _hiddenMediaIds,
         );
         final matchedLyrics = _applyPendingLyricLibrary(
@@ -2558,6 +2591,8 @@ class LumioAppState extends ChangeNotifier {
   }
 
   void _replaceItem(MediaItem updated) {
+    if (_receivedMedia.containsKey(updated.id))
+      _receivedMedia[updated.id] = updated;
     if (updated.kind == MediaKind.audio) {
       _audioItems = _audioItems
           .map((item) => item.id == updated.id ? updated : item)
@@ -2575,6 +2610,7 @@ class LumioAppState extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _deviceTransfer?.dispose();
     _lyricTimer?.cancel();
     lyricChanges.dispose();
     subtitleChanges.dispose();

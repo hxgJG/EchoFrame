@@ -8,6 +8,7 @@ import '../subtitle_workbench/subtitle_workbench_page.dart';
 import '../search/search_page.dart';
 import '../../shared/widgets/media_tile.dart';
 import '../../shared/widgets/section_header.dart';
+import '../../shared/widgets/received_media_export_action.dart';
 
 class VideoPage extends StatefulWidget {
   const VideoPage({super.key, required this.state});
@@ -141,9 +142,13 @@ class _VideoMenu extends StatelessWidget {
           const PopupMenuItem(value: 'subtitles', child: Text('编辑 / 制作字幕')),
         const PopupMenuItem(value: 'play', child: Text('播放')),
         const PopupMenuItem(value: 'share', child: Text('分享')),
+        if (item.sourceId == 'lumio-received')
+          const PopupMenuItem(value: 'exportReceived', child: Text('另存接收文件…')),
         const PopupMenuItem(value: 'edit', child: Text('编辑信息')),
-        const PopupMenuItem(value: 'renameFile', child: Text('重命名文件')),
-        const PopupMenuItem(value: 'moveFile', child: Text('移动文件')),
+        if (item.sourceId != 'lumio-received') ...[
+          const PopupMenuItem(value: 'renameFile', child: Text('重命名文件')),
+          const PopupMenuItem(value: 'moveFile', child: Text('移动文件')),
+        ],
         const PopupMenuItem(value: 'deleteFile', child: Text('从媒体库移除')),
         const PopupMenuItem(value: 'detail', child: Text('详情')),
       ],
@@ -155,6 +160,8 @@ class _VideoMenu extends StatelessWidget {
             onPlay();
           case 'share':
             state.share(item);
+          case 'exportReceived':
+            exportReceivedMedia(context, item);
           case 'edit':
             _showMetadataDialog(context, state, item);
           case 'renameFile':

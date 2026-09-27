@@ -73,6 +73,7 @@ private data class PendingMediaFileOperation(
 )
 
 class MainActivity : FlutterActivity() {
+    private var deviceTransfer: LumioDeviceTransferPlugin? = null
     private data class PendingLyricsExport(
         val result: MethodChannel.Result,
         val bytes: ByteArray,
@@ -197,6 +198,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        deviceTransfer = LumioDeviceTransferPlugin(this, flutterEngine.dartExecutor.binaryMessenger)
         MMKV.initialize(this)
         flutterTextureRegistry = flutterEngine.renderer
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -223,6 +225,7 @@ class MainActivity : FlutterActivity() {
                     "createBackup" -> createAppBackup(call.arguments, result)
                     "restoreLatestBackup" -> restoreLatestBackup(result)
                     "latestBackup" -> latestBackup(result)
+                    "transferStorage" -> transferStorage(result)
                     else -> result.notImplemented()
                 }
             }
@@ -269,6 +272,18 @@ class MainActivity : FlutterActivity() {
             },
             ContextCompat.getMainExecutor(this),
         )
+    }
+
+    private fun transferStorage(result: MethodChannel.Result) {
+        try {
+            val root = TransferStoragePaths.root(noBackupFilesDir)
+            result.success(mapOf(
+                "path" to root.canonicalPath,
+                "availableBytes" to android.os.StatFs(root.path).availableBytes,
+            ))
+        } catch (error: Exception) {
+            result.error("transferStorageFailed", error.message, null)
+        }
     }
 
     private fun attachMediaController(controller: MediaController) {
@@ -344,7 +359,7 @@ class MainActivity : FlutterActivity() {
             val mediaId = values["mediaId"]?.toString().orEmpty()
             val kind = values["kind"]?.toString().orEmpty()
             val title = values["title"]?.toString().orEmpty().ifBlank { "忆光媒体" }
-            val uri = mediaStoreUri(mediaId, kind)
+            val uri = shareableMediaUri(mediaId, kind, values["path"]?.toString().orEmpty())
             if (uri == null) {
                 result.error("shareUnsupported", "只能分享 Android 媒体库扫描到的本地媒体。", null)
                 return
@@ -372,7 +387,7 @@ class MainActivity : FlutterActivity() {
                 val item = rawItem as? Map<*, *> ?: return@forEach
                 val mediaId = item["mediaId"]?.toString().orEmpty()
                 val kind = item["kind"]?.toString().orEmpty()
-                mediaStoreUri(mediaId, kind)?.let { uris.add(it) }
+                shareableMediaUri(mediaId, kind, item["path"]?.toString().orEmpty())?.let { uris.add(it) }
             }
             if (uris.isEmpty()) {
                 result.error("shareUnsupported", "没有可分享的 Android 媒体库文件。", null)
@@ -388,6 +403,17 @@ class MainActivity : FlutterActivity() {
         } catch (error: Exception) {
             result.error("shareFailed", error.message ?: "Share media failed.", null)
         }
+    }
+
+    private fun shareableMediaUri(mediaId: String, kind: String, path: String): Uri? {
+        if (!mediaId.startsWith("transfer-")) return mediaStoreUri(mediaId, kind)
+        val file = File(path)
+        val root = File(noBackupFilesDir, "lumio_transfer/received").canonicalFile
+        require(file.canonicalPath == file.absolutePath && file.canonicalFile.parentFile == root &&
+            file.isFile && file.nameWithoutExtension == mediaId.removePrefix("transfer-")) {
+            "接收文件不存在或不在允许的目录中。"
+        }
+        return androidx.core.content.FileProvider.getUriForFile(this, "$packageName.received", file)
     }
 
     private fun mediaStoreUri(mediaId: String, kind: String): Uri? {
@@ -706,6 +732,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        deviceTransfer?.dispose()
         pendingLyricsExport?.result?.success(mapOf("status" to "cancelled", "message" to "应用已关闭，导出中断。"))
         pendingLyricsExport = null
         pendingFileOperation?.result?.success(
@@ -736,6 +763,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (deviceTransfer?.onActivityResult(requestCode, resultCode, data) == true) return
         if (requestCode == lyricsExportRequestCode) {
             completeLyricsExport(resultCode, data)
             return

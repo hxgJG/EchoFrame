@@ -10,6 +10,7 @@ import '../search/search_page.dart';
 import '../../shared/widgets/media_tile.dart';
 import '../../shared/widgets/lyrics_export_action.dart';
 import '../../shared/widgets/section_header.dart';
+import '../../shared/widgets/received_media_export_action.dart';
 
 class MusicLibraryPage extends StatefulWidget {
   const MusicLibraryPage({super.key, required this.state});
@@ -597,14 +598,18 @@ class _SongMenu extends StatelessWidget {
         const PopupMenuItem(value: 'queue', child: Text('加入队列')),
         const PopupMenuItem(value: 'playlist', child: Text('加入播放列表')),
         const PopupMenuItem(value: 'share', child: Text('分享')),
+        if (item.sourceId == 'lumio-received')
+          const PopupMenuItem(value: 'exportReceived', child: Text('另存接收文件…')),
         PopupMenuItem(
             value: 'exportLyrics',
             enabled: item.lyrics.isNotEmpty && !state.isExportingLyrics,
             child: const Text('导出歌词')),
         const PopupMenuItem(value: 'edit', child: Text('编辑信息')),
         const PopupMenuItem(value: 'authorLyrics', child: Text('制作歌词 / 继续草稿')),
-        const PopupMenuItem(value: 'renameFile', child: Text('重命名文件')),
-        const PopupMenuItem(value: 'moveFile', child: Text('移动文件')),
+        if (item.sourceId != 'lumio-received') ...[
+          const PopupMenuItem(value: 'renameFile', child: Text('重命名文件')),
+          const PopupMenuItem(value: 'moveFile', child: Text('移动文件')),
+        ],
         const PopupMenuItem(value: 'deleteFile', child: Text('从媒体库移除')),
         PopupMenuItem(
           value: 'favorite',
@@ -625,6 +630,8 @@ class _SongMenu extends StatelessWidget {
             );
           case 'share':
             state.share(item);
+          case 'exportReceived':
+            exportReceivedMedia(context, item);
           case 'exportLyrics':
             runLyricsExport(context, state, mediaId: item.id);
           case 'edit':

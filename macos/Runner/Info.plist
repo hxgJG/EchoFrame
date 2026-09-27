@@ -28,5 +28,9 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>仅在你开启设备互传时，发现并连接局域网中的忆光设备，传输你选择的媒体和歌词。</string>
+	<key>NSBonjourServices</key>
+	<array><string>_lumio-xfer._tcp</string></array>
 </dict>
 </plist>

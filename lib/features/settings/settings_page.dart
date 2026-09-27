@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
 
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
@@ -9,6 +10,7 @@ import '../../platform/desktop_lyrics/desktop_lyrics_controller.dart';
 import '../music/lyric_library_page.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/lyrics_export_action.dart';
+import '../device_transfer/device_transfer_page.dart';
 
 const List<String> _equalizerBands = <String>['60', '230', '910', '4k', '14k'];
 
@@ -26,6 +28,17 @@ class SettingsPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
         children: <Widget>[
+          if (Platform.isMacOS || Platform.isAndroid)
+            _SettingsCard(children: [
+              ListTile(
+                  leading: const Icon(Icons.devices_rounded),
+                  title: const Text('设备互传'),
+                  subtitle: const Text('局域网安全传输音乐、视频与歌词 · 无账号'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                          builder: (_) => DeviceTransferPage(state: state)))),
+            ]),
           const SectionHeader(title: '外观'),
           _SettingsCard(
             children: <Widget>[
