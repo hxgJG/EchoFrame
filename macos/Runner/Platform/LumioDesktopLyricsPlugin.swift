@@ -3,6 +3,8 @@ import FlutterMacOS
 
 final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate {
   private let channel: FlutterMethodChannel
+  private let spectrum: LumioAudioSpectrum
+  private var spectrumEnabled = true
   private let defaults = UserDefaults.standard
   private var panel: LyricsPanel?
   private var lyricsView: LyricsView?
@@ -23,11 +25,13 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
 
   static func register(with registrar: FlutterPluginRegistrar) {}
 
-  init(registrar: FlutterPluginRegistrar) {
+  init(registrar: FlutterPluginRegistrar, spectrum: LumioAudioSpectrum) {
+    self.spectrum = spectrum
     channel = FlutterMethodChannel(
       name: "lumio/desktop_lyrics", binaryMessenger: registrar.messenger
     )
     super.init()
+    spectrum.onDesktopBands = { [weak self] bands in self?.lyricsView?.setSpectrum(bands) }
     enabled = defaults.bool(forKey: enabledKey)
     locked = defaults.bool(forKey: lockedKey)
     let savedTransparency = defaults.double(forKey: transparencyKey)
@@ -68,9 +72,11 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
       }
       hasSnapshot = true
       isAudio = args["audio"] as? Bool ?? false
+      spectrumEnabled = args["spectrumEnabled"] as? Bool ?? true
       if enabled && isAudio {
         ensurePanel()
         lyricsView?.applyAppearance(args)
+        lyricsView?.setProgress((args["progress"] as? NSNumber)?.doubleValue ?? 0)
         lyricsView?.setControlsEnabled(args["canControl"] as? Bool ?? false)
         lyricsView?.calibrationMediaId = args["canCalibrate"] as? Bool == true
           ? args["mediaId"] as? String : nil
@@ -175,6 +181,7 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
   private func reconcileVisibility() {
     panel?.alphaValue = CGFloat(1 - transparency)
     guard enabled && isAudio && hasSnapshot else {
+      spectrum.setDesktopRequested(false)
       panel?.orderOut(nil)
       return
     }
@@ -184,6 +191,7 @@ final class LumioDesktopLyricsPlugin: NSObject, FlutterPlugin, NSWindowDelegate 
     lyricsView?.setLocked(locked)
     // 不激活主应用，也不在每次歌词变化时重新抢占窗口层级。
     if panel?.isVisible == false { panel?.orderFrontRegardless() }
+    spectrum.setDesktopRequested(spectrumEnabled && panel?.isVisible == true)
   }
 
   private func placePanel(reset: Bool) {
@@ -266,6 +274,14 @@ private final class LyricsView: NSView {
   private var hoverTrackingArea: NSTrackingArea?
   private var clickStart: NSEvent?
   private var didDrag = false
+  private let spectrumLayer = CAGradientLayer()
+  private let spectrumMask = CAShapeLayer()
+  private var spectrumBands = [Double](repeating: 0, count: 24)
+  private let progressLayer = CALayer()
+  private let progressClip = CAShapeLayer()
+  private let progressTrack = CALayer()
+  private let progressFill = CALayer()
+  private var progress: CGFloat = 0
   override var isFlipped: Bool { true }
   override var mouseDownCanMoveWindow: Bool { false }
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -283,7 +299,17 @@ private final class LyricsView: NSView {
     layer?.backgroundColor = NSColor(srgbRed: 0.97, green: 0.99, blue: 0.96, alpha: 0.82).cgColor
     layer?.borderWidth = 1
     layer?.borderColor = NSColor(srgbRed: 0.70, green: 0.86, blue: 0.78, alpha: 1).cgColor
+    spectrumLayer.startPoint = CGPoint(x: 0, y: 0)
+    spectrumLayer.endPoint = CGPoint(x: 1, y: 0)
+    spectrumLayer.mask = spectrumMask
+    layer?.insertSublayer(spectrumLayer, at: 0)
     let ink = NSColor(srgbRed: 0.15, green: 0.42, blue: 0.36, alpha: 1)
+    progressLayer.mask = progressClip
+    progressLayer.addSublayer(progressTrack)
+    progressLayer.addSublayer(progressFill)
+    progressTrack.backgroundColor = ink.withAlphaComponent(0.12).cgColor
+    progressFill.backgroundColor = ink.withAlphaComponent(0.65).cgColor
+    layer?.addSublayer(progressLayer)
     titleLabel.font = .systemFont(ofSize: 11, weight: .medium)
     titleLabel.textColor = ink.withAlphaComponent(0.8)
     titleLabel.lineBreakMode = .byTruncatingTail
@@ -329,6 +355,7 @@ private final class LyricsView: NSView {
       addSubview(button)
     }
     updateControlsVisibility()
+    needsLayout = true
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -371,6 +398,13 @@ private final class LyricsView: NSView {
 
   override func layout() {
     super.layout()
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    spectrumLayer.frame = bounds
+    spectrumMask.frame = bounds
+    CATransaction.commit()
+    drawSpectrum(animated: false)
+    layoutProgress()
     titleLabel.frame = NSRect(x: 14, y: 6,
       width: max(0, bounds.width - (locked ? 28 : 238)), height: 16)
     previousButton.frame = NSRect(x: bounds.width - 218, y: 3, width: 28, height: 22)
@@ -398,6 +432,27 @@ private final class LyricsView: NSView {
     for button in [previousButton, playButton, nextButton] { button.isEnabled = enabled }
   }
 
+  func setProgress(_ value: Double) {
+    let next = value.isFinite ? CGFloat(min(1, max(0, value))) : 0
+    guard next != progress else { return }
+    progress = next
+    layoutProgress()
+  }
+
+  private func layoutProgress() {
+    // Layer-only decoration: no seek/drag target, and no extra playback timer.
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    progressLayer.frame = bounds
+    progressClip.frame = bounds
+    progressClip.path = CGPath(roundedRect: bounds, cornerWidth: 12, cornerHeight: 12, transform: nil)
+    let height: CGFloat = 2
+    let bottom = bounds.height - height
+    progressTrack.frame = CGRect(x: 0, y: bottom, width: bounds.width, height: height)
+    progressFill.frame = CGRect(x: 0, y: bottom, width: bounds.width * progress, height: height)
+    CATransaction.commit()
+  }
+
   func applyAppearance(_ args: [String: Any]) {
     func color(_ key: String) -> NSColor? {
       guard let number = args[key] as? NSNumber else { return nil }
@@ -413,7 +468,14 @@ private final class LyricsView: NSView {
       layer?.backgroundColor = background.withAlphaComponent(0.82).cgColor
     }
     if let border = color("borderColor") { layer?.borderColor = border.cgColor }
-    if let foreground = color("foregroundColor") { currentLabel.textColor = foreground }
+    if let foreground = color("foregroundColor") {
+      currentLabel.textColor = foreground
+      progressTrack.backgroundColor = foreground.withAlphaComponent(0.12).cgColor
+      progressFill.backgroundColor = foreground.withAlphaComponent(0.65).cgColor
+      let accent = color("spectrumAccentColor") ?? foreground
+      spectrumLayer.colors = [foreground.withAlphaComponent(0.18).cgColor,
+        accent.withAlphaComponent(0.10).cgColor]
+    }
     if let secondary = color("secondaryColor") {
       titleLabel.textColor = secondary
       nextLabel.textColor = secondary
@@ -423,10 +485,57 @@ private final class LyricsView: NSView {
     }
   }
 
+  func setSpectrum(_ bands: [Double]) {
+    guard bands.count == 24 else { return }
+    let next = bands.map { $0.isFinite ? min(1, max(0, $0)) : 0 }
+    guard next != spectrumBands else { return }
+    spectrumBands = next
+    drawSpectrum(animated: true)
+  }
+
+  private func drawSpectrum(animated: Bool) {
+    let path = CGMutablePath()
+    // Fit the minimum 360pt panel; resizing only adds space on the right.
+    let spectrumWidth = min(336, max(0, bounds.width - 24))
+    let step = max(1, spectrumWidth / 24)
+    let width = min(7, step * 0.46)
+    let maximumHeight = max(0, bounds.height - 6)
+    for i in 0..<24 {
+      let height = max(0.001, CGFloat(spectrumBands[i]) * maximumHeight)
+      let x = 12 + (CGFloat(i) + 0.5) * step
+      // This flipped view uses top-down coordinates; bars stay inside the panel.
+      let left = x - width / 2, right = x + width / 2
+      let bottom = bounds.height - 3, top = bottom - height
+      let radius = min(width, height) / 2
+      // Keep identical path commands even at zero height, avoiding malformed
+      // intermediate shapes when Core Animation interpolates rounded bars.
+      path.move(to: CGPoint(x: left + radius, y: top))
+      path.addLine(to: CGPoint(x: right - radius, y: top))
+      path.addQuadCurve(to: CGPoint(x: right, y: top + radius), control: CGPoint(x: right, y: top))
+      path.addLine(to: CGPoint(x: right, y: bottom))
+      path.addLine(to: CGPoint(x: left, y: bottom))
+      path.addLine(to: CGPoint(x: left, y: top + radius))
+      path.addQuadCurve(to: CGPoint(x: left + radius, y: top), control: CGPoint(x: left, y: top))
+      path.closeSubpath()
+    }
+    if animated, let previous = spectrumMask.presentation()?.path ?? spectrumMask.path {
+      let animation = CABasicAnimation(keyPath: "path")
+      animation.fromValue = previous
+      animation.toValue = path
+      animation.duration = 0.10
+      spectrumMask.add(animation, forKey: "spectrum")
+    }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    spectrumMask.path = path
+    CATransaction.commit()
+  }
+
   func setLocked(_ value: Bool) {
+    let changed = value != locked
     locked = value
     refreshHoverState()
-    needsLayout = true
+    if changed { needsLayout = true }
   }
 
   override func mouseDown(with event: NSEvent) {

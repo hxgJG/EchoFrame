@@ -97,7 +97,7 @@ class _MusicLibraryPageState extends State<MusicLibraryPage>
           context,
         ),
         foregroundColor: LumioTheme.onMediaColor(context),
-        tooltip: '随机播放当前列表',
+        tooltip: '随机播放音乐库',
         onPressed: state.audioItems.isEmpty
             ? null
             : () => state.shuffleAll(MediaKind.audio),
@@ -133,8 +133,28 @@ class _SongsTab extends StatefulWidget {
 
 class _SongsTabState extends State<_SongsTab> {
   final Set<String> _selectedIds = <String>{};
+  final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  String _query = '';
 
   bool get _isSelecting => _selectedIds.isNotEmpty;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _updateSearch(String value) {
+    setState(() {
+      _query = value.trim().toLowerCase();
+      _selectedIds.clear();
+    });
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
+  }
 
   void _toggleSelected(String mediaId) {
     setState(() {
@@ -158,18 +178,77 @@ class _SongsTabState extends State<_SongsTab> {
 
   @override
   Widget build(BuildContext context) {
+    final allItems = widget.state.audioItems;
+    final terms = _query.split(RegExp(r'\s+'));
+    final items = _query.isEmpty
+        ? allItems
+        : allItems.where((item) {
+            final text = item.searchText;
+            return terms.every(text.contains);
+          }).toList(growable: false);
+    return Column(
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: '搜索本地歌曲、歌手、专辑或文件夹',
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: _searchController.text.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: '清空搜索',
+                      onPressed: () {
+                        _searchController.clear();
+                        _updateSearch('');
+                      },
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+              filled: true,
+              isDense: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide.none,
+              ),
+            ),
+            textInputAction: TextInputAction.search,
+            onChanged: _updateSearch,
+          ),
+        ),
+        if (_query.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text('找到 ${items.length} 首本地歌曲',
+                  style: Theme.of(context).textTheme.bodySmall),
+            ),
+          ),
+        Expanded(
+          child: allItems.isEmpty
+              ? const _MusicEmptyState(
+                  title: '没有找到音频',
+                  message: '可以到设置里扫描本机媒体，或检查读取权限。',
+                )
+              : items.isEmpty
+                  ? const _MusicEmptyState(
+                      title: '没有找到匹配的歌曲',
+                      message: '试试其他歌名、歌手、专辑或文件夹，或清空搜索。',
+                    )
+                  : _buildSongs(context, items),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSongs(BuildContext context, List<MediaItem> items) {
     final state = widget.state;
     final scheme = Theme.of(context).colorScheme;
     final audioColor = LumioTheme.audioColor(context);
-    final items = state.audioItems;
-    if (items.isEmpty) {
-      return const _MusicEmptyState(
-        title: '没有找到音频',
-        message: '可以到设置里扫描本机媒体，或检查读取权限。',
-      );
-    }
     if (state.settings.musicViewMode == MusicViewMode.grid) {
       return CustomScrollView(
+        controller: _scrollController,
         slivers: <Widget>[
           if (_isSelecting)
             SliverPadding(
@@ -207,6 +286,7 @@ class _SongsTabState extends State<_SongsTab> {
       );
     }
     return ListView.builder(
+      controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 88),
       itemCount: items.length + (_isSelecting ? 1 : 0),
       itemBuilder: (context, index) {

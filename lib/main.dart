@@ -86,6 +86,7 @@ class _LumioAppState extends State<LumioApp> {
               'secondaryColor': scheme.onSurfaceVariant.toARGB32(),
               'borderColor': scheme.outlineVariant.toARGB32(),
               'dark': scheme.brightness == Brightness.dark,
+              'spectrumAccentColor': scheme.secondary.toARGB32(),
             });
             return child!;
           },

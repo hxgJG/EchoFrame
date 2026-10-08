@@ -21,6 +21,7 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		F70000112026100800000001 /* LumioSpectrumCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000012026100800000001 /* LumioSpectrumCapture.swift */; };
 		E60000112026092600000001 /* LumioDeviceTransferPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E60000012026092600000001 /* LumioDeviceTransferPlugin.swift */; };
 		D40000112026091900000001 /* LumioSubtitleRenderDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000012026091900000001 /* LumioSubtitleRenderDocument.swift */; };
 		D40000122026091900000002 /* LumioSubtitleVideoComposition.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000022026091900000002 /* LumioSubtitleVideoComposition.swift */; };
@@ -75,6 +76,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		F70000012026100800000001 /* LumioSpectrumCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LumioSpectrumCapture.swift; sourceTree = "<group>"; };
 		E60000012026092600000001 /* LumioDeviceTransferPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LumioDeviceTransferPlugin.swift; sourceTree = "<group>"; };
 		D40000012026091900000001 /* LumioSubtitleRenderDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LumioSubtitleRenderDocument.swift; sourceTree = "<group>"; };
 		D40000022026091900000002 /* LumioSubtitleVideoComposition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LumioSubtitleVideoComposition.swift; sourceTree = "<group>"; };
@@ -228,6 +230,7 @@
 				A10000042026080300000004 /* LumioMediaLibraryPlugin.swift */,
 				A10000052026080300000005 /* LumioVideoTexture.swift */,
 				A10000062026080300000006 /* LumioPlaybackPlugin.swift */,
+				F70000012026100800000001 /* LumioSpectrumCapture.swift */,
 			);
 			path = Platform;
 			sourceTree = "<group>";
@@ -497,6 +500,7 @@
 				A10000142026080300000004 /* LumioMediaLibraryPlugin.swift in Sources */,
 				A10000152026080300000005 /* LumioVideoTexture.swift in Sources */,
 				A10000162026080300000006 /* LumioPlaybackPlugin.swift in Sources */,
+				F70000112026100800000001 /* LumioSpectrumCapture.swift in Sources */,
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,

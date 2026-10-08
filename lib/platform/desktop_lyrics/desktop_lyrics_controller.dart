@@ -120,7 +120,7 @@ class DesktopLyricsController extends ChangeNotifier {
     if (_sending || _disposed || !enabled || _latest.isEmpty) return;
     _sending = true;
     try {
-      // 只跨通道发送变化后的句子，不逐播放进度刷新原生窗口。
+      // 合并变化后的歌词和量化进度快照，不逐动画帧刷新原生窗口。
       while (!_disposed && enabled && !mapEquals(_sent, _latest)) {
         final snapshot = _latest;
         await _channel.invokeMethod<void>('update', snapshot);

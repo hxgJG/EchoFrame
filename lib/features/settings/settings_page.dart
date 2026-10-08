@@ -94,6 +94,13 @@ class SettingsPage extends StatelessWidget {
                 value: false,
                 onChanged: null,
               ),
+              SwitchListTile(
+                secondary: const Icon(Icons.graphic_eq_rounded),
+                title: const Text('歌词律动背景'),
+                subtitle: const Text('随音乐轻柔起伏，暂停或离开歌词页后停止'),
+                value: state.settings.lyricSpectrumEnabled,
+                onChanged: state.setLyricSpectrumEnabled,
+              ),
               ListTile(
                 leading: const Icon(Icons.color_lens_rounded),
                 title: const Text('主题色'),
@@ -125,6 +132,14 @@ class SettingsPage extends StatelessWidget {
           if (state.desktopLyrics.supported) ...<Widget>[
             const SectionHeader(title: '桌面歌词'),
             _SettingsCard(children: <Widget>[
+              SwitchListTile(
+                secondary: const Icon(Icons.graphic_eq_rounded),
+                title: const Text('桌面歌词律动背景'),
+                subtitle: const Text('轻量频谱，不改变歌词窗口大小与透明度'),
+                value: state.settings.desktopSpectrumEnabled,
+                onChanged: (value) =>
+                    state.setLyricSpectrumEnabled(value, desktop: true),
+              ),
               SwitchListTile(
                 secondary: const Icon(Icons.lyrics_outlined),
                 title: const Text('显示桌面歌词'),

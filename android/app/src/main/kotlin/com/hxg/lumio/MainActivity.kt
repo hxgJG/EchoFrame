@@ -200,6 +200,17 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         deviceTransfer = LumioDeviceTransferPlugin(this, flutterEngine.dartExecutor.binaryMessenger)
         MMKV.initialize(this)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "lumio/audio_spectrum")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "configure" -> {
+                        LumioPlaybackService.configureSpectrum(call.argument<Boolean>("enabled") == true)
+                        result.success(null)
+                    }
+                    "read" -> result.success(LumioPlaybackService.readSpectrum())
+                    else -> result.notImplemented()
+                }
+            }
         flutterTextureRegistry = flutterEngine.renderer
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, mediaLibraryChannelName)
@@ -732,6 +743,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        LumioPlaybackService.configureSpectrum(false)
         deviceTransfer?.dispose()
         pendingLyricsExport?.result?.success(mapOf("status" to "cancelled", "message" to "应用已关闭，导出中断。"))
         pendingLyricsExport = null
@@ -754,6 +766,11 @@ class MainActivity : FlutterActivity() {
         playbackChannel = null
         mediaScanExecutor.shutdownNow()
         super.onDestroy()
+    }
+
+    override fun onStop() {
+        LumioPlaybackService.configureSpectrum(false)
+        super.onStop()
     }
 
     override fun onNewIntent(intent: Intent) {

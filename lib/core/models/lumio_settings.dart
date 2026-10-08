@@ -35,6 +35,8 @@ class LumioSettings {
     this.videoScaleMode = VideoScaleMode.fit,
     this.musicViewMode = MusicViewMode.list,
     this.themeAccent = ThemeAccent.blue,
+    this.lyricSpectrumEnabled = true,
+    this.desktopSpectrumEnabled = true,
   });
 
   factory LumioSettings.fromJson(Map<String, Object?> json) {
@@ -74,6 +76,8 @@ class LumioSettings {
         json['musicViewMode']?.toString(),
       ),
       themeAccent: _themeAccentFromName(json['themeAccent']?.toString()),
+      lyricSpectrumEnabled: json['lyricSpectrumEnabled'] != false,
+      desktopSpectrumEnabled: json['desktopSpectrumEnabled'] != false,
     );
   }
 
@@ -95,6 +99,8 @@ class LumioSettings {
   final VideoScaleMode videoScaleMode;
   final MusicViewMode musicViewMode;
   final ThemeAccent themeAccent;
+  final bool lyricSpectrumEnabled;
+  final bool desktopSpectrumEnabled;
 
   bool get crossfadeEnabled => crossfadeSeconds > 0;
 
@@ -127,6 +133,8 @@ class LumioSettings {
     VideoScaleMode? videoScaleMode,
     MusicViewMode? musicViewMode,
     ThemeAccent? themeAccent,
+    bool? lyricSpectrumEnabled,
+    bool? desktopSpectrumEnabled,
   }) {
     return LumioSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -148,6 +156,9 @@ class LumioSettings {
       videoScaleMode: videoScaleMode ?? this.videoScaleMode,
       musicViewMode: musicViewMode ?? this.musicViewMode,
       themeAccent: themeAccent ?? this.themeAccent,
+      lyricSpectrumEnabled: lyricSpectrumEnabled ?? this.lyricSpectrumEnabled,
+      desktopSpectrumEnabled:
+          desktopSpectrumEnabled ?? this.desktopSpectrumEnabled,
     );
   }
 
@@ -171,6 +182,8 @@ class LumioSettings {
       'videoScaleMode': videoScaleMode.name,
       'musicViewMode': musicViewMode.name,
       'themeAccent': themeAccent.name,
+      'lyricSpectrumEnabled': lyricSpectrumEnabled,
+      'desktopSpectrumEnabled': desktopSpectrumEnabled,
     };
   }
 }

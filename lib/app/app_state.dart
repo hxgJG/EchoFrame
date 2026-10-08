@@ -33,6 +33,7 @@ import '../platform/platform_capabilities.dart';
 import '../platform/subtitle_workbench/subtitle_workbench_repository.dart';
 import '../platform/playback/playback_repository.dart';
 import '../platform/playback/platform_playback_repository.dart';
+import '../platform/playback/audio_spectrum_controller.dart';
 import 'seed_data.dart';
 import '../core/device_transfer/transfer_protocol.dart';
 import '../platform/device_transfer/device_transfer_controller.dart';
@@ -73,6 +74,7 @@ class LumioAppState extends ChangeNotifier {
         _playbackRepository.events.listen(_handlePlaybackEvent);
     addListener(_reconcileLyricUpdates);
     addListener(_syncDesktopLyrics);
+    addListener(_syncSpectrum);
     desktopLyrics.addListener(_desktopLyricsChanged);
     desktopLyrics.initialize(
       onPrevious: previous,
@@ -82,13 +84,14 @@ class LumioAppState extends ChangeNotifier {
     _restorePersistedState();
     if (Platform.isMacOS || Platform.isAndroid) {
       // Generate only the local identity at startup; never start sharing here.
-      unawaited(TransferIdentity.load().then<void>((_) {},
-          onError: (Object _, StackTrace __) {}));
+      unawaited(TransferIdentity.load()
+          .then<void>((_) {}, onError: (Object _, StackTrace __) {}));
     }
   }
 
   final MediaLibraryRepository _mediaLibraryRepository;
   final DesktopLyricsController desktopLyrics = DesktopLyricsController();
+  final AudioSpectrumController audioSpectrum = AudioSpectrumController();
   final AppStorageRepository _appStorageRepository;
   final PlaybackRepository _playbackRepository;
   final OnlineEnhancementRepository _onlineEnhancementRepository;
@@ -539,10 +542,22 @@ class LumioAppState extends ChangeNotifier {
     final item = _currentItem;
     final lines = item?.lyrics ?? const <LyricLine>[];
     final index = currentLyricIndex;
+    final artist = item?.artist.trim() ?? '';
+    final durationMs = item?.duration.inMilliseconds ?? 0;
+    final progress = durationMs <= 0
+        ? 0.0
+        : (_position.inMilliseconds / durationMs).clamp(0.0, 1.0);
+    final title = item == null
+        ? '忆光 · 桌面歌词'
+        : artist.isEmpty || artist == '未知艺术家'
+            ? item.title
+            : '$artist · ${item.title}';
     desktopLyrics.publish(<String, Object>{
       'audio': item == null || item.kind == MediaKind.audio,
-      'title': item?.title ?? '忆光 · 桌面歌词',
+      'title': title,
       'playing': _isPlaying,
+      'progress': (progress * 1000).floor() / 1000,
+      'spectrumEnabled': _settings.desktopSpectrumEnabled,
       'canControl': item?.kind == MediaKind.audio,
       'mediaId': item?.id ?? '',
       'canCalibrate': item?.kind == MediaKind.audio && lines.isNotEmpty,
@@ -1305,6 +1320,19 @@ class LumioAppState extends ChangeNotifier {
 
   void setThemeMode(ThemeMode mode) {
     _settings = _settings.copyWith(themeMode: mode);
+    _saveState();
+    notifyListeners();
+  }
+
+  void _syncSpectrum() => audioSpectrum.updatePlayback(
+        playing: _isPlaying && _currentItem?.kind == MediaKind.audio,
+        mediaId: _currentItem?.id,
+      );
+
+  void setLyricSpectrumEnabled(bool enabled, {bool desktop = false}) {
+    _settings = desktop
+        ? _settings.copyWith(desktopSpectrumEnabled: enabled)
+        : _settings.copyWith(lyricSpectrumEnabled: enabled);
     _saveState();
     notifyListeners();
   }
@@ -2616,6 +2644,8 @@ class LumioAppState extends ChangeNotifier {
     subtitleChanges.dispose();
     removeListener(_reconcileLyricUpdates);
     removeListener(_syncDesktopLyrics);
+    removeListener(_syncSpectrum);
+    audioSpectrum.dispose();
     desktopLyrics.removeListener(_desktopLyricsChanged);
     desktopLyrics.dispose();
     _positionTimer?.cancel();

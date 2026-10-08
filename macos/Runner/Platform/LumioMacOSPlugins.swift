@@ -21,7 +21,7 @@ enum LumioMacOSPlugins {
       bookmarkStore: bookmarkStore,
       window: window
     )
-    let desktopLyrics = LumioDesktopLyricsPlugin(registrar: registrar)
+    let desktopLyrics = LumioDesktopLyricsPlugin(registrar: registrar, spectrum: playback.spectrum)
     let workbench = LumioSubtitleWorkbenchPlugin(registrar: registrar, window: window, bookmarks: bookmarkStore)
     subtitleWorkbench = workbench
     retainedPlugins = [storage, transfer, mediaLibrary, playback, desktopLyrics, workbench]

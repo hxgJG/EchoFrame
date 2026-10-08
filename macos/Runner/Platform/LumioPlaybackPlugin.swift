@@ -2,12 +2,14 @@ import AVFoundation
 import Cocoa
 import FlutterMacOS
 import MediaPlayer
+import MediaToolbox
 
 final class LumioPlaybackPlugin: NSObject, FlutterPlugin {
   private let channel: FlutterMethodChannel
   private let bookmarkStore: SecurityScopedBookmarkStore
   private weak var window: NSWindow?
   private let player = AVPlayer()
+  let spectrum: LumioAudioSpectrum
   private let texture: LumioVideoTexture
   private var activeAccessRoot: URL?
   private var endObserver: NSObjectProtocol?
@@ -27,6 +29,7 @@ final class LumioPlaybackPlugin: NSObject, FlutterPlugin {
   ) {
     self.bookmarkStore = bookmarkStore
     self.window = window
+    spectrum = LumioAudioSpectrum(registrar: registrar, window: window)
     channel = FlutterMethodChannel(
       name: "lumio/playback",
       binaryMessenger: registrar.messenger
@@ -39,6 +42,7 @@ final class LumioPlaybackPlugin: NSObject, FlutterPlugin {
       [weak self] player, _ in
       guard let self else { return }
       self.updateNowPlayingPosition()
+      self.spectrum.setPlaying(player.timeControlStatus == .playing)
       self.channel.invokeMethod(
         "nativePlaybackStateChanged",
         arguments: ["isPlaying": player.timeControlStatus == .playing]
@@ -82,6 +86,7 @@ final class LumioPlaybackPlugin: NSObject, FlutterPlugin {
         result(invalidArguments("缺少播放位置。"))
         return
       }
+      spectrum.clear()
       let time = CMTime(
         milliseconds: int64(arguments["positionMs"]),
         preferredTimescale: 600
@@ -139,12 +144,14 @@ final class LumioPlaybackPlugin: NSObject, FlutterPlugin {
     activeAccessRoot = bookmarkStore.startAccess(forFilePath: path)
 
     let item = AVPlayerItem(url: URL(fileURLWithPath: path))
+    spectrum.reset()
     observe(item: item)
     let kind = values["kind"] as? String ?? "audio"
     if kind == "video" {
       texture.attach(to: item)
     } else {
       texture.detach()
+      spectrum.attach(to: item)
     }
     player.replaceCurrentItem(with: item)
     currentMetadata = values
@@ -187,6 +194,7 @@ final class LumioPlaybackPlugin: NSObject, FlutterPlugin {
   }
 
   private func stopPlayback() {
+    spectrum.reset()
     player.pause()
     player.replaceCurrentItem(with: nil)
     texture.detach()
@@ -303,6 +311,131 @@ final class LumioPlaybackPlugin: NSObject, FlutterPlugin {
 
   private func unsupported(_ message: String) -> FlutterError {
     FlutterError(code: "unsupported", message: message, details: nil)
+  }
+}
+
+/// Captures only the player's own decoded PCM; analysis never runs on its audio callback.
+final class LumioAudioSpectrum {
+  private let channel: FlutterMethodChannel
+  private weak var window: NSWindow?
+  private var capture = LumioSpectrumCapture()
+  private let worker = DispatchQueue(label: "com.hxg.lumio.spectrum", qos: .utility)
+  private var timer: Timer?
+  private var working = false
+  private var appRequested = false
+  private var desktopRequested = false
+  private var playing = false
+  private var sleeping = false
+  private var epoch = 0
+  private var bands = [Double](repeating: 0, count: 24)
+  private var observers: [NSObjectProtocol] = []
+  var onDesktopBands: (([Double]) -> Void)?
+
+  init(registrar: FlutterPluginRegistrar, window: NSWindow) {
+    self.window = window
+    channel = FlutterMethodChannel(name: "lumio/audio_spectrum", binaryMessenger: registrar.messenger)
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard let self else { result(nil); return }
+      switch call.method {
+      case "configure":
+        self.appRequested = (call.arguments as? [String: Any])?["enabled"] as? Bool == true
+        self.reconcile()
+        result(nil)
+      case "read": result(self.bands)
+      default: result(FlutterMethodNotImplemented)
+      }
+    }
+    for name in [NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification,
+                 NSApplication.didHideNotification, NSApplication.didUnhideNotification] {
+      observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) {
+        [weak self] _ in self?.reconcile()
+      })
+    }
+    let center = NSWorkspace.shared.notificationCenter
+    observers.append(center.addObserver(forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+      object: nil, queue: .main) { [weak self] _ in self?.reconcile() })
+    for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification,
+                 NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification] {
+      observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+        self?.sleeping = note.name == NSWorkspace.willSleepNotification || note.name == NSWorkspace.screensDidSleepNotification
+        self?.reconcile()
+      })
+    }
+  }
+
+  deinit {
+    timer?.invalidate()
+    for observer in observers {
+      NotificationCenter.default.removeObserver(observer)
+      NSWorkspace.shared.notificationCenter.removeObserver(observer)
+    }
+    channel.setMethodCallHandler(nil)
+  }
+
+  func setPlaying(_ value: Bool) { playing = value; reconcile() }
+  func setDesktopRequested(_ value: Bool) { desktopRequested = value; reconcile() }
+
+  func reset() {
+    capture.enabled = false
+    capture = LumioSpectrumCapture()
+    epoch += 1
+    bands = [Double](repeating: 0, count: 24)
+    onDesktopBands?(bands)
+    reconcile()
+  }
+
+  func clear() {
+    capture.clear()
+    epoch += 1
+    bands = [Double](repeating: 0, count: 24)
+    onDesktopBands?(bands)
+  }
+
+  func attach(to item: AVPlayerItem) {
+    let context = capture
+    Task { @MainActor [weak self, weak item] in
+      guard let item, let track = try? await item.asset.loadTracks(withMediaType: .audio).first else { return }
+      guard let self, self.capture === context, let tap = context.makeTap() else { return }
+      let input = AVMutableAudioMixInputParameters(track: track)
+      input.audioTapProcessor = tap
+      let mix = AVMutableAudioMix()
+      mix.inputParameters = [input]
+      item.audioMix = mix
+    }
+  }
+
+  private func reconcile() {
+    let reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    let appVisible = appRequested && window?.isMiniaturized == false && !NSApp.isHidden
+    let active = playing && !sleeping && !reduced && (appVisible || (desktopRequested && !NSApp.isHidden))
+    capture.enabled = active
+    if !active {
+      timer?.invalidate(); timer = nil
+      epoch += 1
+      bands = [Double](repeating: 0, count: 24)
+      onDesktopBands?(bands)
+    } else if timer == nil {
+      timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in self?.analyze() }
+      RunLoop.main.add(timer!, forMode: .common)
+    }
+    if !desktopRequested || reduced { onDesktopBands?([Double](repeating: 0, count: 24)) }
+  }
+
+  private func analyze() {
+    guard !working else { return }
+    working = true
+    let current = capture
+    let generation = epoch
+    worker.async { [weak self] in
+      let result = current.analyze()
+      DispatchQueue.main.async {
+        guard let self else { return }
+        self.working = false
+        guard generation == self.epoch, self.timer != nil else { return }
+        self.bands = result
+        if self.desktopRequested { self.onDesktopBands?(result) }
+      }
+    }
   }
 }
 

@@ -13,6 +13,7 @@ import '../../core/playback/playback_page_gesture.dart';
 import '../../platform/media_library/lyrics_import.dart';
 import '../../shared/widgets/media_tile.dart';
 import '../../shared/widgets/lyrics_export_action.dart';
+import '../../shared/widgets/lyric_spectrum_background.dart';
 import 'lyric_calibration_dialog.dart';
 import 'lyric_authoring_page.dart';
 
@@ -376,63 +377,76 @@ class _LyricsStageState extends State<_LyricsStage> {
     return Container(
       key: const ValueKey<String>('lyrics'),
       height: widget.height,
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: scheme.surface,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
       ),
-      child: lines.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    '未找到本地歌词',
-                    style: textTheme.titleMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
+      child: Stack(fit: StackFit.expand, children: [
+        LyricSpectrumBackground(
+          controller: widget.state.audioSpectrum,
+          enabled:
+              widget.state.settings.lyricSpectrumEnabled && lines.isNotEmpty,
+          color: audioColor,
+          accent: scheme.secondary,
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
+          child: lines.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        '未找到本地歌词',
+                        style: textTheme.titleMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      OutlinedButton.icon(
+                        onPressed: () => _importLyrics(
+                          context,
+                          widget.state,
+                          widget.item,
+                        ),
+                        icon: const Icon(Icons.upload_file_rounded),
+                        label: const Text('导入 LRC 歌词'),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 14),
-                  OutlinedButton.icon(
-                    onPressed: () => _importLyrics(
-                      context,
-                      widget.state,
-                      widget.item,
-                    ),
-                    icon: const Icon(Icons.upload_file_rounded),
-                    label: const Text('导入 LRC 歌词'),
-                  ),
-                ],
-              ),
-            )
-          : ListView.builder(
-              controller: _scrollController,
-              itemExtent: _lineExtent,
-              itemCount: lines.length,
-              itemBuilder: (context, index) {
-                final isCurrent = index == currentIndex;
-                final distance = (index - currentIndex).abs();
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 7),
-                  child: Text(
-                    lines[index].text,
-                    textAlign: TextAlign.center,
-                    style: (isCurrent
-                            ? textTheme.titleLarge
-                            : textTheme.titleMedium)
-                        ?.copyWith(
-                      color: isCurrent
-                          ? audioColor
-                          : scheme.onSurface.withValues(
-                              alpha: distance <= 1 ? 0.58 : 0.32,
-                            ),
-                      fontWeight: isCurrent ? FontWeight.w900 : FontWeight.w700,
-                    ),
-                  ),
-                );
-              },
-            ),
+                )
+              : ListView.builder(
+                  controller: _scrollController,
+                  itemExtent: _lineExtent,
+                  itemCount: lines.length,
+                  itemBuilder: (context, index) {
+                    final isCurrent = index == currentIndex;
+                    final distance = (index - currentIndex).abs();
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 7),
+                      child: Text(
+                        lines[index].text,
+                        textAlign: TextAlign.center,
+                        style: (isCurrent
+                                ? textTheme.titleLarge
+                                : textTheme.titleMedium)
+                            ?.copyWith(
+                          color: isCurrent
+                              ? audioColor
+                              : scheme.onSurface.withValues(
+                                  alpha: distance <= 1 ? 0.58 : 0.32,
+                                ),
+                          fontWeight:
+                              isCurrent ? FontWeight.w900 : FontWeight.w700,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ]),
     );
   }
 }

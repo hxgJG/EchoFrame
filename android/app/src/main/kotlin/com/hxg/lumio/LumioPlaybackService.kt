@@ -8,6 +8,14 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import android.content.Context
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
@@ -15,6 +23,13 @@ class LumioPlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private lateinit var player: ExoPlayer
     private lateinit var crossfadePlayer: ExoPlayer
+    private val spectrumCapture = SpectrumCapture()
+    private val crossfadeCapture = SpectrumCapture()
+    private val spectrumWorker = Executors.newSingleThreadScheduledExecutor()
+    private var spectrumTask: ScheduledFuture<*>? = null
+    private data class SpectrumFrame(val primary: DoubleArray, val secondary: DoubleArray)
+    private val spectrumGeneration = AtomicInteger()
+    @Volatile private var spectrum = SpectrumFrame(DoubleArray(24), DoubleArray(24))
     private val handler = Handler(Looper.getMainLooper())
     private var crossfadeDurationMs = 0L
     private var crossfadeStartedAtMs = 0L
@@ -32,6 +47,7 @@ class LumioPlaybackService : MediaSessionService() {
     }
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            reconcileSpectrum()
             if (isPlaying) {
                 scheduleCrossfadeMonitor()
             } else if (!handoffInProgress) {
@@ -40,9 +56,16 @@ class LumioPlaybackService : MediaSessionService() {
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            clearSpectrum()
             if (!handoffInProgress) {
                 cancelCrossfade()
             }
+        }
+
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int,
+        ) {
+            clearSpectrum()
         }
     }
     private val crossfadePlayerListener = object : Player.Listener {
@@ -59,12 +82,13 @@ class LumioPlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        player = buildPlayer(handleAudioFocus = true)
-        crossfadePlayer = buildPlayer(handleAudioFocus = false)
+        player = buildPlayer(handleAudioFocus = true, capture = spectrumCapture)
+        crossfadePlayer = buildPlayer(handleAudioFocus = false, capture = crossfadeCapture)
         player.addListener(playerListener)
         crossfadePlayer.addListener(crossfadePlayerListener)
         mediaSession = MediaSession.Builder(this, player).build()
         activeInstance = this
+        reconcileSpectrum()
     }
 
     override fun onGetSession(
@@ -74,6 +98,10 @@ class LumioPlaybackService : MediaSessionService() {
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         activeInstance = null
+        spectrumCapture.enabled = false
+        crossfadeCapture.enabled = false
+        spectrumTask?.cancel(false)
+        spectrumWorker.shutdownNow()
         cancelCrossfade()
         player.removeListener(playerListener)
         crossfadePlayer.removeListener(crossfadePlayerListener)
@@ -86,8 +114,17 @@ class LumioPlaybackService : MediaSessionService() {
         super.onDestroy()
     }
 
-    private fun buildPlayer(handleAudioFocus: Boolean): ExoPlayer {
-        return ExoPlayer.Builder(this)
+    private fun buildPlayer(handleAudioFocus: Boolean, capture: SpectrumCapture): ExoPlayer {
+        val renderers = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(context: Context, enableFloatOutput: Boolean,
+                enableAudioOutputPlaybackParams: Boolean): AudioSink =
+                DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
+                    .setAudioProcessors(arrayOf(SpectrumAudioProcessor(capture)))
+                    .build()
+        }
+        return ExoPlayer.Builder(this, renderers)
             .build()
             .apply {
                 setAudioAttributes(
@@ -228,11 +265,58 @@ class LumioPlaybackService : MediaSessionService() {
     }
 
     companion object {
+        @Volatile private var spectrumRequested = false
         @Volatile
         private var activeInstance: LumioPlaybackService? = null
+
+        fun configureSpectrum(enabled: Boolean) {
+            spectrumRequested = enabled
+            activeInstance?.reconcileSpectrum()
+        }
+
+        fun readSpectrum(): List<Double> = activeInstance?.readBands() ?: emptyList()
 
         fun updateCrossfadeDuration(durationMs: Long) {
             activeInstance?.setCrossfadeDuration(durationMs)
         }
+    }
+
+    private fun reconcileSpectrum() {
+        val enabled = spectrumRequested && ::player.isInitialized && player.isPlaying
+        spectrumCapture.enabled = enabled
+        crossfadeCapture.enabled = enabled
+        if (!enabled) {
+            spectrumTask?.cancel(false)
+            spectrumTask = null
+            clearSpectrum()
+            return
+        }
+        if (spectrumTask != null) return
+        spectrumTask = spectrumWorker.scheduleAtFixedRate({
+            val generation = spectrumGeneration.get()
+            val primary = spectrumCapture.bands()
+            val secondary = crossfadeCapture.bands()
+            // Publication is atomic; no platform calls or allocations on the audio thread.
+            if (spectrumCapture.enabled && generation == spectrumGeneration.get()) {
+                spectrum = SpectrumFrame(primary, secondary)
+            }
+        }, 0, 50, TimeUnit.MILLISECONDS)
+    }
+
+    private fun clearSpectrum() {
+        spectrumGeneration.incrementAndGet()
+        spectrumCapture.clear()
+        crossfadeCapture.clear()
+        spectrum = SpectrumFrame(DoubleArray(24), DoubleArray(24))
+    }
+
+    private fun readBands(): List<Double> {
+        if (!spectrumRequested || !player.isPlaying) return emptyList()
+        val frame = spectrum
+        val primaryVolume = player.volume.toDouble()
+        val secondaryVolume = if (crossfadeActive || handoffInProgress) crossfadePlayer.volume.toDouble() else 0.0
+        fun scaled(value: Double, volume: Double): Double =
+            (value * volume).coerceIn(0.0, 1.0)
+        return List(24) { maxOf(scaled(frame.primary[it], primaryVolume), scaled(frame.secondary[it], secondaryVolume)) }
     }
 }
