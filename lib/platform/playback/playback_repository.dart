@@ -4,6 +4,7 @@ enum PlaybackEventType {
   completed,
   error,
   videoTextureChanged,
+  videoAspectRatioChanged,
   play,
   pause,
   toggle,
@@ -22,18 +23,22 @@ class PlaybackEvent {
     this.mediaId,
     this.message = '',
     this.videoTextureId,
+    this.videoAspectRatio,
     this.mayResume = false,
     this.isInPictureInPicture = false,
     this.isPlaying = false,
+    this.restarted = false,
   });
 
   final PlaybackEventType type;
   final String? mediaId;
   final String message;
   final int? videoTextureId;
+  final double? videoAspectRatio;
   final bool mayResume;
   final bool isInPictureInPicture;
   final bool isPlaying;
+  final bool restarted;
 }
 
 abstract class PlaybackRepository {
@@ -66,6 +71,8 @@ abstract class PlaybackRepository {
 
   Future<void> setShuffleEnabled(bool enabled);
 
+  Future<void> setShuffleWeights(Map<String, int> weights);
+
   Future<void> setRepeatMode(RepeatMode mode);
 
   Future<void> stop();
@@ -74,9 +81,11 @@ abstract class PlaybackRepository {
 
   Future<void> enterPictureInPicture();
 
-  Future<void> adjustBrightness(double delta);
+  Future<double?> adjustBrightness(double delta);
 
-  Future<void> adjustVolume(double delta);
+  Future<double?> adjustVolume(double delta);
+
+  Future<void> setVideoFullscreen(bool enabled);
 
   Future<void> share(MediaItem item);
 

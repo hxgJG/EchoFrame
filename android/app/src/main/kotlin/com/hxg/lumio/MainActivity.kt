@@ -37,6 +37,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import android.provider.Settings
 import android.util.Rational
 import android.view.Surface
 import androidx.core.content.ContextCompat
@@ -44,6 +45,7 @@ import androidx.media3.common.MediaItem as Media3MediaItem
 import androidx.media3.common.MediaMetadata as Media3MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.mpatric.mp3agic.ID3v24Tag
@@ -60,6 +62,7 @@ import java.security.MessageDigest
 import java.util.concurrent.Executors
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.roundToInt
 
 private data class PendingMediaFileOperation(
     val type: String,
@@ -112,6 +115,8 @@ class MainActivity : FlutterActivity() {
     private var currentPlaybackArtist: String = "本地媒体"
     private var currentPlaybackAlbum: String = ""
     private var currentPlaybackKind: String = ""
+    private var playbackShuffleEnabled = false
+    private var playbackCatalog: List<Media3MediaItem> = emptyList()
     private var isInPipMode = false
     private var playbackSpeed: Float = 1.0f
     private var volumeScale: Float = 1.0f
@@ -119,6 +124,9 @@ class MainActivity : FlutterActivity() {
     private var customEqualizerGains: List<Int> = listOf(0, 0, 0, 0, 0)
     private var equalizer: Equalizer? = null
     private var audioManager: AudioManager? = null
+    private var fullscreenBrightness: Float? = null
+    private var gestureVolume: Double? = null
+    private var lastGestureVolume: Int? = null
     private var audioFocusRequest: AudioFocusRequest? = null
     private var mediaSession: MediaSession? = null
     private var noisyReceiverRegistered = false
@@ -151,6 +159,10 @@ class MainActivity : FlutterActivity() {
             if (mediaId.isBlank()) {
                 return
             }
+            val restarted = mediaId == currentPlaybackMediaId && playbackShuffleEnabled &&
+                mediaController?.repeatMode != Player.REPEAT_MODE_ONE &&
+                reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED &&
+                playbackCatalog.any { (it.mediaMetadata.extras?.getInt("shuffleWeight", 1) ?: 1) > 1 }
             completionEventSent = false
             currentPlaybackMediaId = mediaId
             currentPlaybackKind = mediaItem?.mediaMetadata?.extras
@@ -158,7 +170,7 @@ class MainActivity : FlutterActivity() {
                 .orEmpty()
             playbackChannel?.invokeMethod(
                 "mediaItemChanged",
-                mapOf("mediaId" to mediaId),
+                mapOf("mediaId" to mediaId, "restarted" to restarted),
             )
         }
 
@@ -193,6 +205,19 @@ class MainActivity : FlutterActivity() {
 
         override fun onAudioSessionIdChanged(audioSessionId: Int) {
             applyEqualizer(audioSessionId)
+        }
+
+        override fun onVideoSizeChanged(videoSize: VideoSize) {
+            if (videoSize.width <= 0 || videoSize.height <= 0) return
+            videoTextureEntry?.surfaceTexture()?.setDefaultBufferSize(videoSize.width, videoSize.height)
+            playbackChannel?.invokeMethod(
+                "videoSizeChanged",
+                mapOf(
+                    "mediaId" to currentPlaybackMediaId,
+                    "aspectRatio" to videoSize.width.toDouble() * videoSize.pixelWidthHeightRatio /
+                        videoSize.height.toDouble(),
+                ),
+            )
         }
     }
 
@@ -252,12 +277,31 @@ class MainActivity : FlutterActivity() {
                 "setVolumeScale" -> setVolumeScale(call.arguments, result)
                 "setCrossfadeDuration" -> setCrossfadeDuration(call.arguments, result)
                 "setShuffleEnabled" -> setShuffleEnabled(call.arguments, result)
+                "setShuffleWeights" -> setShuffleWeights(call.arguments, result)
                 "setRepeatMode" -> setRepeatMode(call.arguments, result)
                 "stop" -> stopMedia(result)
                 "position" -> playbackPosition(result)
                 "enterPictureInPicture" -> enterPip(result)
                 "adjustBrightness" -> adjustBrightness(call.arguments, result)
                 "adjustVolume" -> adjustVolume(call.arguments, result)
+                "setVideoFullscreen" -> {
+                    val enabled = (call.arguments as? Map<*, *>)?.get("enabled") == true
+                    if (enabled && fullscreenBrightness == null) {
+                        fullscreenBrightness = window.attributes.screenBrightness
+                        gestureVolume = null
+                        lastGestureVolume = null
+                    } else if (!enabled) {
+                        fullscreenBrightness?.let { original ->
+                            val attributes = window.attributes
+                            attributes.screenBrightness = original
+                            window.attributes = attributes
+                        }
+                        fullscreenBrightness = null
+                        gestureVolume = null
+                        lastGestureVolume = null
+                    }
+                    result.success(null)
+                }
                 "share" -> shareMedia(call.arguments, result)
                 "shareMany" -> shareManyMedia(call.arguments, result)
                 else -> result.notImplemented()
@@ -303,6 +347,9 @@ class MainActivity : FlutterActivity() {
         }
         mediaController?.removeListener(mediaControllerListener)
         mediaController = controller
+        playbackShuffleEnabled = controller.shuffleModeEnabled
+        playbackCatalog = (0 until controller.mediaItemCount)
+            .map(controller::getMediaItemAt).distinctBy { it.mediaId }
         controller.addListener(mediaControllerListener)
         controller.currentMediaItem?.let {
             mediaControllerListener.onMediaItemTransition(
@@ -1238,7 +1285,11 @@ class MainActivity : FlutterActivity() {
                 return@mapNotNull null
             }
             val kind = item["kind"]?.toString().orEmpty()
-            val extras = Bundle().apply { putString("kind", kind) }
+            val extras = Bundle().apply {
+                putString("kind", kind)
+                putInt("shuffleWeight", if (kind == "audio")
+                    ((item["shuffleWeight"] as? Number)?.toInt() ?: 1).coerceIn(1, 10) else 1)
+            }
             Media3MediaItem.Builder()
                 .setMediaId(mediaId)
                 .setUri(mediaUri(path))
@@ -1279,12 +1330,15 @@ class MainActivity : FlutterActivity() {
             null
         }
         withMediaController(result, "playFailed") { controller ->
+            playbackCatalog = mediaItems
+            val weightedItems = weightedPlaybackItems()
+            val weightedCurrentIndex = weightedItems.indexOfFirst { it.mediaId == current.mediaId }
             if (currentPlaybackKind == "video") {
                 videoSurface?.let(controller::setVideoSurface)
             } else {
                 controller.clearVideoSurface()
             }
-            controller.setMediaItems(mediaItems, currentIndex, startPositionMs.coerceAtLeast(0L))
+            controller.setMediaItems(weightedItems, weightedCurrentIndex, startPositionMs.coerceAtLeast(0L))
             controller.setPlaybackSpeed(playbackSpeed)
             controller.volume = volumeScale
             controller.prepare()
@@ -1367,7 +1421,49 @@ class MainActivity : FlutterActivity() {
     private fun setShuffleEnabled(arguments: Any?, result: MethodChannel.Result) {
         val values = arguments as? Map<*, *> ?: emptyMap<String, Any?>()
         withMediaController(result, "shuffleFailed") { controller ->
-            controller.shuffleModeEnabled = values["enabled"] == true
+            playbackShuffleEnabled = values["enabled"] == true
+            controller.shuffleModeEnabled = playbackShuffleEnabled
+            rebuildWeightedQueue(controller)
+            null
+        }
+    }
+
+    private fun weightedPlaybackItems(): List<Media3MediaItem> {
+        val weights = playbackCatalog.map {
+            if (it.mediaMetadata.extras?.getString("kind") == "audio")
+                it.mediaMetadata.extras?.getInt("shuffleWeight", 1) ?: 1 else 1
+        }
+        return weightedQueueIndices(weights, playbackShuffleEnabled).map { playbackCatalog[it] }
+    }
+
+    private fun rebuildWeightedQueue(controller: MediaController) {
+        if (controller.mediaItemCount == 0 || playbackCatalog.isEmpty()) return
+        val items = weightedPlaybackItems()
+        val oldIds = (0 until controller.mediaItemCount).map { controller.getMediaItemAt(it).mediaId }
+        if (oldIds == items.map { it.mediaId }) return
+        val currentId = controller.currentMediaItem?.mediaId
+        val index = items.indexOfFirst { it.mediaId == currentId }.coerceAtLeast(0)
+        val position = controller.currentPosition.coerceAtLeast(0L)
+        val prepared = controller.playbackState != Player.STATE_IDLE
+        controller.setMediaItems(items, index, position)
+        if (prepared) controller.prepare()
+    }
+
+    private fun setShuffleWeights(arguments: Any?, result: MethodChannel.Result) {
+        val values = arguments as? Map<*, *> ?: emptyMap<String, Any?>()
+        val weights = values["weights"] as? Map<*, *> ?: emptyMap<String, Any?>()
+        withMediaController(result, "shuffleWeightFailed") { controller ->
+            playbackCatalog = playbackCatalog.map { item ->
+                val weight = (weights[item.mediaId] as? Number)?.toInt()
+                if (weight == null || item.mediaMetadata.extras?.getString("kind") != "audio") item
+                else {
+                    val extras = Bundle(item.mediaMetadata.extras ?: Bundle())
+                    extras.putInt("shuffleWeight", weight.coerceIn(1, 10))
+                    item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon()
+                        .setExtras(extras).build()).build()
+                }
+            }
+            rebuildWeightedQueue(controller)
             null
         }
     }
@@ -1391,6 +1487,7 @@ class MainActivity : FlutterActivity() {
         currentPlaybackKind = ""
         releaseVideoSurface()
         withMediaController(result, "stopFailed") { controller ->
+            playbackCatalog = emptyList()
             controller.stop()
             controller.clearMediaItems()
             null
@@ -1478,7 +1575,8 @@ class MainActivity : FlutterActivity() {
         val delta = doubleArgument(arguments, "delta").toFloat()
         try {
             val attributes = window.attributes
-            val current = if (attributes.screenBrightness >= 0f) attributes.screenBrightness else 0.5f
+            val current = if (attributes.screenBrightness >= 0f) attributes.screenBrightness else
+                Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, 128) / 255f
             attributes.screenBrightness = (current + delta).coerceIn(0.05f, 1.0f)
             window.attributes = attributes
             result.success(attributes.screenBrightness.toDouble())
@@ -1497,9 +1595,15 @@ class MainActivity : FlutterActivity() {
         try {
             val maxVolume = manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
             val current = manager.getStreamVolume(AudioManager.STREAM_MUSIC)
-            val next = (current + (delta * maxVolume).toInt()).coerceIn(0, maxVolume)
+            // 保留不足一个系统音量档位的变化；物理音量键改变档位后重新同步。
+            val base = if (lastGestureVolume == current) gestureVolume ?: current.toDouble()
+                else current.toDouble()
+            val target = (base + delta * maxVolume).coerceIn(0.0, maxVolume.toDouble())
+            val next = target.roundToInt().coerceIn(0, maxVolume)
             manager.setStreamVolume(AudioManager.STREAM_MUSIC, next, 0)
-            result.success(next.toDouble() / maxVolume.toDouble())
+            gestureVolume = target
+            lastGestureVolume = manager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            result.success(lastGestureVolume!!.toDouble() / maxVolume.toDouble())
         } catch (error: Exception) {
             result.error("volumeFailed", error.message ?: "Adjust volume failed.", null)
         }

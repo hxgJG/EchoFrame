@@ -94,6 +94,9 @@ class SubtitleCue {
 }
 
 class MediaItem {
+  static const defaultShuffleWeight = 1;
+  static const maximumShuffleWeight = 10;
+
   const MediaItem({
     required this.id,
     required this.kind,
@@ -106,6 +109,7 @@ class MediaItem {
     required this.addedAt,
     required this.accentColor,
     this.playCount = 0,
+    this.shuffleWeight = defaultShuffleWeight,
     this.isFavorite = false,
     this.lyrics = const <LyricLine>[],
     this.hasCustomLyrics = false,
@@ -147,6 +151,9 @@ class MediaItem {
       addedAt: DateTime.fromMillisecondsSinceEpoch(_asInt(json['addedAtMs'])),
       accentColor: Color(_asInt(json['accentColor'])),
       playCount: _asInt(json['playCount']),
+      shuffleWeight: (int.tryParse(json['shuffleWeight']?.toString() ?? '') ??
+              defaultShuffleWeight)
+          .clamp(defaultShuffleWeight, maximumShuffleWeight),
       isFavorite: json['isFavorite'] == true,
       lyrics: lyrics,
       lyricTiming: LyricTiming.fromJson(json['lyricTiming'], lyrics),
@@ -191,6 +198,7 @@ class MediaItem {
   final DateTime addedAt;
   final Color accentColor;
   final int playCount;
+  final int shuffleWeight;
   final bool isFavorite;
   final List<LyricLine> lyrics;
   final bool hasCustomLyrics;
@@ -237,6 +245,7 @@ class MediaItem {
     DateTime? addedAt,
     Color? accentColor,
     int? playCount,
+    int? shuffleWeight,
     bool? isFavorite,
     List<LyricLine>? lyrics,
     bool? hasCustomLyrics,
@@ -268,6 +277,8 @@ class MediaItem {
       addedAt: addedAt ?? this.addedAt,
       accentColor: accentColor ?? this.accentColor,
       playCount: playCount ?? this.playCount,
+      shuffleWeight: (shuffleWeight ?? this.shuffleWeight)
+          .clamp(defaultShuffleWeight, maximumShuffleWeight),
       isFavorite: isFavorite ?? this.isFavorite,
       lyrics: lyrics ?? this.lyrics,
       hasCustomLyrics: hasCustomLyrics ?? this.hasCustomLyrics,
@@ -307,6 +318,7 @@ class MediaItem {
       'addedAtMs': addedAt.millisecondsSinceEpoch,
       'accentColor': accentColor.toARGB32(),
       'playCount': playCount,
+      'shuffleWeight': shuffleWeight,
       'isFavorite': isFavorite,
       'lyrics': lyrics.map((line) => line.toJson()).toList(growable: false),
       'hasCustomLyrics': hasCustomLyrics,

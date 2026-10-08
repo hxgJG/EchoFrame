@@ -287,30 +287,11 @@ class SettingsPage extends StatelessWidget {
                       state.setSubtitlePosition(value.first),
                 ),
               ),
-              ListTile(
-                leading: const Icon(Icons.aspect_ratio_rounded),
-                title: const Text('视频画面比例'),
-                subtitle:
-                    Text(_videoScaleModeLabel(state.settings.videoScaleMode)),
-                trailing: SegmentedButton<VideoScaleMode>(
-                  segments: const <ButtonSegment<VideoScaleMode>>[
-                    ButtonSegment(
-                      value: VideoScaleMode.fit,
-                      icon: Icon(Icons.fit_screen_rounded),
-                    ),
-                    ButtonSegment(
-                      value: VideoScaleMode.stretch,
-                      icon: Icon(Icons.open_in_full_rounded),
-                    ),
-                    ButtonSegment(
-                      value: VideoScaleMode.crop,
-                      icon: Icon(Icons.crop_free_rounded),
-                    ),
-                  ],
-                  selected: <VideoScaleMode>{state.settings.videoScaleMode},
-                  onSelectionChanged: (value) =>
-                      state.setVideoScaleMode(value.first),
-                ),
+              const ListTile(
+                leading: Icon(Icons.aspect_ratio_rounded),
+                title: Text('视频画面比例'),
+                subtitle: Text('始终保持原始比例，居中完整展示；全屏方向随视频自动适配。'),
+                trailing: Icon(Icons.fit_screen_rounded),
               ),
             ],
           ),
@@ -806,14 +787,6 @@ class SettingsPage extends StatelessWidget {
       SubtitlePosition.low => '靠下',
       SubtitlePosition.middle => '居中',
       SubtitlePosition.high => '靠上',
-    };
-  }
-
-  String _videoScaleModeLabel(VideoScaleMode mode) {
-    return switch (mode) {
-      VideoScaleMode.fit => '适应屏幕',
-      VideoScaleMode.stretch => '拉伸',
-      VideoScaleMode.crop => '裁剪填充',
     };
   }
 

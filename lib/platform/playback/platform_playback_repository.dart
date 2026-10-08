@@ -146,6 +146,13 @@ class PlatformPlaybackRepository implements PlaybackRepository {
   }
 
   @override
+  Future<void> setShuffleWeights(Map<String, int> weights) async {
+    if (!Platform.isAndroid) return;
+    await _channel
+        .invokeMethod<void>('setShuffleWeights', {'weights': weights});
+  }
+
+  @override
   Future<void> stop() => _invokeWithoutResult('stop');
 
   @override
@@ -163,23 +170,30 @@ class PlatformPlaybackRepository implements PlaybackRepository {
       );
 
   @override
-  Future<void> adjustBrightness(double delta) {
+  Future<double?> adjustBrightness(double delta) {
     if (!_isSupportedPlatform) {
-      return Future<void>.value();
+      return Future<double?>.value();
     }
-    return _channel.invokeMethod<void>('adjustBrightness', <String, Object?>{
+    return _channel.invokeMethod<double>('adjustBrightness', <String, Object?>{
       'delta': delta,
     });
   }
 
   @override
-  Future<void> adjustVolume(double delta) {
+  Future<double?> adjustVolume(double delta) {
     if (!_isSupportedPlatform) {
-      return Future<void>.value();
+      return Future<double?>.value();
     }
-    return _channel.invokeMethod<void>('adjustVolume', <String, Object?>{
+    return _channel.invokeMethod<double>('adjustVolume', <String, Object?>{
       'delta': delta,
     });
+  }
+
+  @override
+  Future<void> setVideoFullscreen(bool enabled) async {
+    if (!Platform.isAndroid) return;
+    await _channel
+        .invokeMethod<void>('setVideoFullscreen', {'enabled': enabled});
   }
 
   @override
@@ -233,6 +247,15 @@ class PlatformPlaybackRepository implements PlaybackRepository {
         );
       case 'videoTextureChanged':
         _setVideoTextureId(_asInt(values['textureId']));
+      case 'videoSizeChanged':
+        final ratio = (values['aspectRatio'] as num?)?.toDouble();
+        if (ratio != null && ratio.isFinite && ratio > 0) {
+          _events.add(PlaybackEvent(
+            type: PlaybackEventType.videoAspectRatioChanged,
+            mediaId: values['mediaId']?.toString(),
+            videoAspectRatio: ratio,
+          ));
+        }
       case 'play':
         _events.add(const PlaybackEvent(type: PlaybackEventType.play));
       case 'pause':
@@ -266,6 +289,7 @@ class PlatformPlaybackRepository implements PlaybackRepository {
           PlaybackEvent(
             type: PlaybackEventType.mediaItemChanged,
             mediaId: values['mediaId']?.toString(),
+            restarted: values['restarted'] == true,
           ),
         );
       case 'nativePlaybackStateChanged':

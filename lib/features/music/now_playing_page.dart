@@ -57,8 +57,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
               )
             : _VideoTextureView(
                 textureId: textureId,
-                scaleMode: VideoScaleMode.fit,
-                aspectRatio: _videoAspectRatio(item),
+                aspectRatio: state.videoAspectRatio ?? _videoAspectRatio(item),
               ),
       );
     }
@@ -502,8 +501,7 @@ class _VideoStage extends StatelessWidget {
             ] else
               _VideoTextureView(
                 textureId: textureId!,
-                scaleMode: state.settings.videoScaleMode,
-                aspectRatio: _videoAspectRatio(item),
+                aspectRatio: state.videoAspectRatio ?? _videoAspectRatio(item),
               ),
             Positioned(
               left: 12,
@@ -578,8 +576,12 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
   static const Duration _controlsHideDelay = Duration(seconds: 3);
 
   double _horizontalDrag = 0;
-  double _verticalDrag = 0;
   bool _verticalDragStartedOnLeft = true;
+  bool? _landscapeVideo;
+  double? _gestureLevel;
+  bool _gestureVisible = false;
+  int _gestureEpoch = 0;
+  Timer? _gestureHideTimer;
   bool _controlsVisible = true;
   late bool _lastIsPlaying;
   Timer? _controlsHideTimer;
@@ -593,19 +595,19 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
       _scheduleControlsHide();
     }
     if (widget.state.platformCapabilities.supportsBrightnessAdjustment) {
+      unawaited(widget.state.setVideoFullscreen(true));
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-      SystemChrome.setPreferredOrientations(const <DeviceOrientation>[
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
+      _syncVideoOrientation();
     }
   }
 
   @override
   void dispose() {
     _controlsHideTimer?.cancel();
+    _gestureHideTimer?.cancel();
     widget.state.removeListener(_handlePlaybackStateChanged);
     if (widget.state.platformCapabilities.supportsBrightnessAdjustment) {
+      unawaited(widget.state.setVideoFullscreen(false));
       SystemChrome.setPreferredOrientations(const <DeviceOrientation>[
         DeviceOrientation.portraitUp,
         DeviceOrientation.portraitDown,
@@ -618,6 +620,7 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
   }
 
   void _handlePlaybackStateChanged() {
+    _syncVideoOrientation();
     final isPlaying = widget.state.isPlaying;
     if (_lastIsPlaying == isPlaying) {
       return;
@@ -628,6 +631,54 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
     } else {
       _showControls(scheduleHide: false);
     }
+  }
+
+  void _syncVideoOrientation() {
+    if (!widget.state.platformCapabilities.supportsBrightnessAdjustment) return;
+    final ratio = widget.state.videoAspectRatio ??
+        _videoAspectRatio(widget.state.currentItem);
+    final landscape = ratio > 1;
+    if (_landscapeVideo == landscape) return;
+    _landscapeVideo = landscape;
+    SystemChrome.setPreferredOrientations(landscape
+        ? const [
+            DeviceOrientation.landscapeLeft,
+            DeviceOrientation.landscapeRight
+          ]
+        : const [DeviceOrientation.portraitUp]);
+  }
+
+  void _startVerticalGesture(DragStartDetails details) {
+    _controlsHideTimer?.cancel();
+    _gestureHideTimer?.cancel();
+    _gestureEpoch++;
+    setState(() {
+      _verticalDragStartedOnLeft =
+          details.localPosition.dx < MediaQuery.sizeOf(context).width / 2;
+      _gestureLevel = null;
+      _gestureVisible = true;
+    });
+  }
+
+  void _updateVerticalGesture(DragUpdateDetails details) {
+    final epoch = _gestureEpoch;
+    final delta = -(details.primaryDelta ?? 0) /
+        (MediaQuery.sizeOf(context).height * 0.8);
+    final adjustment = _verticalDragStartedOnLeft
+        ? widget.state.adjustBrightness(delta)
+        : widget.state.adjustVolume(delta);
+    unawaited(adjustment.then((level) {
+      if (!mounted || epoch != _gestureEpoch || level == null) return;
+      setState(() => _gestureLevel = level.clamp(0, 1));
+    }));
+  }
+
+  void _endVerticalGesture() {
+    _gestureHideTimer?.cancel();
+    _gestureHideTimer = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) setState(() => _gestureVisible = false);
+    });
+    _scheduleControlsHide();
   }
 
   void _scheduleControlsHide() {
@@ -666,137 +717,161 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
     final state = widget.state;
     final item = state.currentItem;
     final textureId = state.videoTextureId;
+    final canAdjust = state.platformCapabilities.supportsBrightnessAdjustment &&
+        MediaQuery.orientationOf(context) == Orientation.landscape;
     return Scaffold(
       backgroundColor: Colors.black,
-      body: SafeArea(
-        child: MouseRegion(
-          onHover: (_) => _showControls(),
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _toggleControls,
-            onHorizontalDragStart: (_) => _showControls(scheduleHide: false),
-            onHorizontalDragUpdate: (details) {
-              _horizontalDrag += details.primaryDelta ?? 0;
-            },
-            onHorizontalDragEnd: (_) {
-              final media = state.currentItem;
-              if (media != null && _horizontalDrag.abs() >= 24) {
-                final deltaMs = _horizontalDrag * 45;
-                final nextPosition =
-                    state.position + Duration(milliseconds: deltaMs.round());
-                state.seekToFraction(
-                  media.duration.inMilliseconds == 0
-                      ? 0
-                      : nextPosition.inMilliseconds /
-                          media.duration.inMilliseconds,
-                );
-              }
-              _horizontalDrag = 0;
-              _scheduleControlsHide();
-            },
-            onVerticalDragStart:
-                state.platformCapabilities.supportsBrightnessAdjustment
-                    ? (details) {
-                        _verticalDragStartedOnLeft = details.localPosition.dx <
-                            MediaQuery.sizeOf(context).width / 2;
-                        _verticalDrag = 0;
-                      }
-                    : null,
-            onVerticalDragUpdate:
-                state.platformCapabilities.supportsBrightnessAdjustment
-                    ? (details) {
-                        _verticalDrag += details.primaryDelta ?? 0;
-                        if (_verticalDrag.abs() < 20) {
-                          return;
-                        }
-                        final delta = -_verticalDrag / 600;
-                        if (_verticalDragStartedOnLeft) {
-                          state.adjustBrightness(delta);
-                        } else {
-                          state.adjustVolume(delta);
-                        }
-                        _verticalDrag = 0;
-                      }
-                    : null,
-            child: Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                if (textureId == null)
-                  const Center(
-                    child: Icon(
-                      Icons.play_circle_fill_rounded,
-                      color: Colors.white70,
-                      size: 80,
-                    ),
-                  )
-                else
-                  _VideoTextureView(
-                    textureId: textureId,
-                    scaleMode: state.settings.videoScaleMode,
-                    aspectRatio: _videoAspectRatio(item),
+      body: MouseRegion(
+        onHover: (_) => _showControls(),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _toggleControls,
+          onHorizontalDragStart: (_) {
+            _horizontalDrag = 0;
+            _showControls(scheduleHide: false);
+          },
+          onHorizontalDragUpdate: (details) {
+            _horizontalDrag += details.primaryDelta ?? 0;
+          },
+          onHorizontalDragEnd: (_) {
+            final media = state.currentItem;
+            if (media != null && _horizontalDrag.abs() >= 24) {
+              final deltaMs = _horizontalDrag * 45;
+              final nextPosition =
+                  state.position + Duration(milliseconds: deltaMs.round());
+              state.seekToFraction(
+                media.duration.inMilliseconds == 0
+                    ? 0
+                    : nextPosition.inMilliseconds /
+                        media.duration.inMilliseconds,
+              );
+            }
+            _horizontalDrag = 0;
+            _scheduleControlsHide();
+          },
+          onHorizontalDragCancel: () {
+            _horizontalDrag = 0;
+            _scheduleControlsHide();
+          },
+          onVerticalDragStart: canAdjust ? _startVerticalGesture : null,
+          onVerticalDragUpdate: canAdjust ? _updateVerticalGesture : null,
+          onVerticalDragEnd: canAdjust ? (_) => _endVerticalGesture() : null,
+          onVerticalDragCancel: canAdjust ? _endVerticalGesture : null,
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              if (textureId == null)
+                const Center(
+                  child: Icon(
+                    Icons.play_circle_fill_rounded,
+                    color: Colors.white70,
+                    size: 80,
                   ),
-                if (state.platformCapabilities.supportsSubtitleEditing ||
-                    state.currentSubtitleText.isNotEmpty)
-                  Positioned(
-                    left: 24,
-                    right: 24,
-                    bottom: _subtitleBottom(
-                          state.settings.subtitlePosition,
-                          true,
-                        ) -
-                        (_controlsVisible ? 0 : 72),
-                    child: state.platformCapabilities.supportsSubtitleEditing
-                        ? _DesktopSubtitleOverlay(state: state)
-                        : _SubtitleOverlayText(
-                            text: state.currentSubtitleText,
-                            settings: state.settings,
+                )
+              else
+                _VideoTextureView(
+                  textureId: textureId,
+                  aspectRatio:
+                      state.videoAspectRatio ?? _videoAspectRatio(item),
+                ),
+              if (state.platformCapabilities.supportsSubtitleEditing ||
+                  state.currentSubtitleText.isNotEmpty)
+                Positioned(
+                  left: 24,
+                  right: 24,
+                  bottom: _subtitleBottom(
+                        state.settings.subtitlePosition,
+                        true,
+                      ) -
+                      (_controlsVisible ? 0 : 72) +
+                      MediaQuery.paddingOf(context).bottom,
+                  child: state.platformCapabilities.supportsSubtitleEditing
+                      ? _DesktopSubtitleOverlay(state: state)
+                      : _SubtitleOverlayText(
+                          text: state.currentSubtitleText,
+                          settings: state.settings,
+                        ),
+                ),
+              Positioned(
+                left: 8,
+                right: 8,
+                top: 8,
+                child: IgnorePointer(
+                  ignoring: !_controlsVisible,
+                  child: AnimatedOpacity(
+                    opacity: _controlsVisible ? 1 : 0,
+                    duration: const Duration(milliseconds: 180),
+                    child: SafeArea(
+                      bottom: false,
+                      child: Align(
+                        alignment: Alignment.topLeft,
+                        child: IconButton(
+                          tooltip: '退出全屏',
+                          onPressed: () => Navigator.of(context).maybePop(),
+                          icon: const Icon(
+                            Icons.fullscreen_exit_rounded,
+                            color: Colors.white,
                           ),
-                  ),
-                Positioned(
-                  left: 8,
-                  top: 8,
-                  child: IgnorePointer(
-                    ignoring: !_controlsVisible,
-                    child: AnimatedOpacity(
-                      opacity: _controlsVisible ? 1 : 0,
-                      duration: const Duration(milliseconds: 180),
-                      child: IconButton(
-                        tooltip: '退出全屏',
-                        onPressed: () => Navigator.of(context).maybePop(),
-                        icon: const Icon(
-                          Icons.fullscreen_exit_rounded,
-                          color: Colors.white,
                         ),
                       ),
                     ),
                   ),
                 ),
-                Positioned(
-                  left: 20,
-                  right: 20,
-                  bottom: 18,
-                  child: IgnorePointer(
-                    ignoring: !_controlsVisible,
-                    child: AnimatedOpacity(
-                      opacity: _controlsVisible ? 1 : 0,
-                      duration: const Duration(milliseconds: 180),
-                      child: MouseRegion(
-                        onEnter: (_) => _showControls(scheduleHide: false),
-                        onExit: (_) => _showControls(),
-                        child: Listener(
-                          onPointerDown: (_) =>
-                              _showControls(scheduleHide: false),
-                          onPointerUp: (_) => _scheduleControlsHide(),
-                          child: item == null
-                              ? const SizedBox.shrink()
-                              : _FullscreenControlBar(state: state, item: item),
-                        ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: IgnorePointer(
+                  ignoring: !_controlsVisible,
+                  child: AnimatedOpacity(
+                    opacity: _controlsVisible ? 1 : 0,
+                    duration: const Duration(milliseconds: 180),
+                    child: MouseRegion(
+                      onEnter: (_) => _showControls(scheduleHide: false),
+                      onExit: (_) => _showControls(),
+                      child: Listener(
+                        onPointerDown: (_) =>
+                            _showControls(scheduleHide: false),
+                        onPointerUp: (_) => _scheduleControlsHide(),
+                        child: item == null
+                            ? const SizedBox.shrink()
+                            : _FullscreenControlBar(state: state, item: item),
                       ),
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+              if (_gestureVisible)
+                Center(
+                  child: IgnorePointer(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.65),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                              _verticalDragStartedOnLeft
+                                  ? Icons.brightness_6_rounded
+                                  : Icons.volume_up_rounded,
+                              color: Colors.white),
+                          const SizedBox(width: 10),
+                          Text(
+                            '${_verticalDragStartedOnLeft ? '亮度' : '音量'}'
+                            '${_gestureLevel == null ? '' : ' ${(_gestureLevel! * 100).round()}%'}',
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),
@@ -807,12 +882,10 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
 class _VideoTextureView extends StatelessWidget {
   const _VideoTextureView({
     required this.textureId,
-    required this.scaleMode,
     required this.aspectRatio,
   });
 
   final int textureId;
-  final VideoScaleMode scaleMode;
   final double aspectRatio;
 
   @override
@@ -824,7 +897,7 @@ class _VideoTextureView extends StatelessWidget {
               ? constraints.maxWidth
               : MediaQuery.sizeOf(context).width;
           return FittedBox(
-            fit: _videoBoxFit(scaleMode),
+            fit: BoxFit.contain,
             child: SizedBox(
               width: width,
               height: width / aspectRatio,
@@ -895,26 +968,23 @@ Color _subtitleColor(SubtitleTextColor color) {
   };
 }
 
-BoxFit _videoBoxFit(VideoScaleMode mode) {
-  return switch (mode) {
-    VideoScaleMode.fit => BoxFit.contain,
-    VideoScaleMode.stretch => BoxFit.fill,
-    VideoScaleMode.crop => BoxFit.cover,
-  };
-}
-
 double _videoAspectRatio(MediaItem? item) {
   final resolution = item?.resolution;
-  if (resolution == null || !resolution.contains('x')) {
+  if (resolution == null) {
     return 16 / 9;
   }
-  final parts = resolution.split('x');
+  final parts = resolution.toLowerCase().split(RegExp(r'[x×]'));
   if (parts.length != 2) {
     return 16 / 9;
   }
   final width = double.tryParse(parts[0]);
   final height = double.tryParse(parts[1]);
-  if (width == null || height == null || width <= 0 || height <= 0) {
+  if (width == null ||
+      height == null ||
+      !width.isFinite ||
+      !height.isFinite ||
+      width <= 0 ||
+      height <= 0) {
     return 16 / 9;
   }
   return width / height;
@@ -943,89 +1013,100 @@ class _FullscreenControlBar extends StatelessWidget {
             .toDouble();
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.42),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(
-              item.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            Row(
-              children: <Widget>[
-                Text(
-                  formatDuration(state.position),
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                Expanded(
-                  child: Slider(
-                    value: fraction,
-                    onChanged: state.seekToFraction,
-                  ),
-                ),
-                Text(
-                  formatDuration(item.duration),
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                IconButton(
-                  tooltip: '上一个',
-                  onPressed: state.previous,
-                  icon: const Icon(
-                    Icons.skip_previous_rounded,
-                    color: Colors.white,
-                    size: 30,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: Colors.black,
-                    shape: const CircleBorder(),
-                    padding: const EdgeInsets.all(12),
-                  ),
-                  onPressed: state.togglePlaying,
-                  child: Icon(
-                    state.isPlaying
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
-                    size: 30,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                IconButton(
-                  tooltip: '下一个',
-                  onPressed: state.next,
-                  icon: const Icon(
-                    Icons.skip_next_rounded,
-                    color: Colors.white,
-                    size: 30,
-                  ),
-                ),
-              ],
-            ),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.transparent,
+            Colors.black.withValues(alpha: 0.65),
+            Colors.black.withValues(alpha: 0.9)
           ],
+          stops: const [0, 0.45, 1],
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                item.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              Row(
+                children: <Widget>[
+                  Text(
+                    formatDuration(state.position),
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: fraction,
+                      onChanged: state.seekToFraction,
+                    ),
+                  ),
+                  Text(
+                    formatDuration(item.duration),
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  IconButton(
+                    tooltip: '上一个',
+                    onPressed: state.previous,
+                    icon: const Icon(
+                      Icons.skip_previous_rounded,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.black,
+                      shape: const CircleBorder(),
+                      padding: const EdgeInsets.all(12),
+                    ),
+                    onPressed: state.togglePlaying,
+                    child: Icon(
+                      state.isPlaying
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                      size: 30,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  IconButton(
+                    tooltip: '下一个',
+                    onPressed: state.next,
+                    icon: const Icon(
+                      Icons.skip_next_rounded,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

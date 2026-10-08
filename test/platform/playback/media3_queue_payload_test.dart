@@ -59,4 +59,14 @@ void main() {
       <String>['audio-2', 'audio-1'],
     );
   });
+
+  test('传递权重但不在 Flutter 层复制原生队列', () {
+    final weighted = first.copyWith(shuffleWeight: 5);
+    final payload = media3QueuePayload(
+        current: weighted, queue: [weighted, second], position: Duration.zero);
+    final items = payload['items'] as List;
+    expect(items.length, 2);
+    expect((items.first as Map)['shuffleWeight'], 5);
+    expect((items.last as Map)['shuffleWeight'], 1);
+  });
 }

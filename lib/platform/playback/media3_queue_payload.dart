@@ -30,6 +30,7 @@ Map<String, Object?> media3QueuePayload({
             'album': item.album,
             'path': item.path,
             'durationMs': item.duration.inMilliseconds,
+            'shuffleWeight': item.shuffleWeight,
           },
         )
         .toList(growable: false),

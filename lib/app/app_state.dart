@@ -19,6 +19,7 @@ import '../core/lyrics/lyrics_export.dart';
 import '../core/lyrics/lyric_library.dart';
 import '../platform/media_library/lyric_package_repository.dart';
 import '../core/playback/playback_interruption_controller.dart';
+import '../core/playback/weighted_shuffle.dart';
 import '../platform/app_storage/app_storage_repository.dart';
 import '../platform/app_storage/platform_app_storage_repository.dart';
 import '../platform/desktop_lyrics/desktop_lyrics_controller.dart';
@@ -149,6 +150,7 @@ class LumioAppState extends ChangeNotifier {
   MediaLibraryScanStatus? _lastScanStatus;
   String _libraryStatusMessage = '尚未扫描本机媒体。';
   int? _videoTextureId;
+  double? _videoAspectRatio;
   String _backupStatusMessage = '播放列表和设置项会自动离线保存。';
   bool _isInPictureInPicture = false;
   double _playbackSpeed = 1.0;
@@ -238,6 +240,7 @@ class LumioAppState extends ChangeNotifier {
   MediaLibraryScanStatus? get lastScanStatus => _lastScanStatus;
   String get libraryStatusMessage => _libraryStatusMessage;
   int? get videoTextureId => _videoTextureId;
+  double? get videoAspectRatio => _videoAspectRatio;
   bool get isInPictureInPicture => _isInPictureInPicture;
   int get hiddenMediaCount => _hiddenMediaIds.length;
   String get backupStatusMessage => _backupStatusMessage;
@@ -698,6 +701,7 @@ class LumioAppState extends ChangeNotifier {
     _lyricCalibration = null;
     _interruptionController.cancelPendingResume();
     final startPosition = _initialPlaybackPosition(item);
+    _videoAspectRatio = null;
     _currentItem = item.copyWith(playCount: item.playCount + 1);
     _position = startPosition;
     _isPlaying = true;
@@ -836,6 +840,13 @@ class LumioAppState extends ChangeNotifier {
 
   int _randomOtherIndex(List<MediaItem> pool) {
     final currentIndex = pool.indexWhere((item) => item.id == _currentItem?.id);
+    if (pool.first.kind == MediaKind.audio) {
+      return weightedShuffleIndex(
+        pool.map((item) => item.shuffleWeight).toList(growable: false),
+        _random,
+        currentIndex: currentIndex,
+      );
+    }
     if (pool.length == 1 || currentIndex < 0) {
       return _random.nextInt(pool.length);
     }
@@ -849,9 +860,27 @@ class LumioAppState extends ChangeNotifier {
       _repeatMode = RepeatMode.off;
       _playbackRepository.setRepeatMode(_repeatMode);
     }
+    if (_shuffleEnabled) {
+      _playbackRepository.setShuffleWeights({
+        for (final song in _audioItems) song.id: song.shuffleWeight,
+      });
+    }
     _playbackRepository.setShuffleEnabled(_shuffleEnabled);
     _saveState();
     notifyListeners();
+  }
+
+  Future<void> setShuffleWeight(String mediaId, int value) async {
+    final item = _findItem(mediaId);
+    if (item == null || item.kind != MediaKind.audio) return;
+    final weight = value.clamp(1, MediaItem.maximumShuffleWeight);
+    if (weight == item.shuffleWeight) return;
+    _replaceItem(item.copyWith(shuffleWeight: weight));
+    _saveState(partitions: const {AppStoragePartition.library});
+    notifyListeners();
+    await _playbackRepository.setShuffleWeights({
+      for (final song in _audioItems) song.id: song.shuffleWeight,
+    });
   }
 
   void cycleRepeatMode() {
@@ -904,20 +933,33 @@ class LumioAppState extends ChangeNotifier {
     });
   }
 
-  void adjustBrightness(double delta) {
-    _playbackRepository.adjustBrightness(delta).catchError((Object error) {
+  Future<double?> adjustBrightness(double delta) {
+    return _playbackRepository
+        .adjustBrightness(delta)
+        .catchError((Object error) {
       _libraryStatusMessage = '亮度调节失败：$error';
       _saveState();
       notifyListeners();
+      return null;
     });
   }
 
-  void adjustVolume(double delta) {
-    _playbackRepository.adjustVolume(delta).catchError((Object error) {
+  Future<double?> adjustVolume(double delta) {
+    return _playbackRepository.adjustVolume(delta).catchError((Object error) {
       _libraryStatusMessage = '音量调节失败：$error';
       _saveState();
       notifyListeners();
+      return null;
     });
+  }
+
+  Future<void> setVideoFullscreen(bool enabled) async {
+    try {
+      await _playbackRepository.setVideoFullscreen(enabled);
+    } catch (error) {
+      _libraryStatusMessage = '全屏亮度状态恢复失败：$error';
+      notifyListeners();
+    }
   }
 
   void share(MediaItem item) {
@@ -2070,6 +2112,11 @@ class LumioAppState extends ChangeNotifier {
         notifyListeners();
       case PlaybackEventType.videoTextureChanged:
         _videoTextureId = event.videoTextureId;
+        _videoAspectRatio = null;
+        notifyListeners();
+      case PlaybackEventType.videoAspectRatioChanged:
+        if (event.mediaId != null && event.mediaId != _currentItem?.id) return;
+        _videoAspectRatio = event.videoAspectRatio;
         notifyListeners();
       case PlaybackEventType.play:
         _resumeFromSystem();
@@ -2095,14 +2142,16 @@ class LumioAppState extends ChangeNotifier {
         _isInPictureInPicture = event.isInPictureInPicture;
         notifyListeners();
       case PlaybackEventType.mediaItemChanged:
-        _handleNativeMediaItemChanged(event.mediaId);
+        _handleNativeMediaItemChanged(event.mediaId,
+            restarted: event.restarted);
       case PlaybackEventType.nativePlaybackStateChanged:
         _handleNativePlaybackStateChanged(event.isPlaying);
     }
   }
 
-  void _handleNativeMediaItemChanged(String? mediaId) {
-    if (mediaId == null || mediaId == _currentItem?.id) {
+  void _handleNativeMediaItemChanged(String? mediaId,
+      {bool restarted = false}) {
+    if (mediaId == null || (mediaId == _currentItem?.id && !restarted)) {
       return;
     }
     final item = _findItem(mediaId);
@@ -2121,6 +2170,7 @@ class LumioAppState extends ChangeNotifier {
       playCount: item.playCount + 1,
       lastPosition: Duration.zero,
     );
+    _videoAspectRatio = null;
     _replaceItem(_currentItem!);
     _position = Duration.zero;
     _isPlaying = true;
@@ -2464,6 +2514,7 @@ class LumioAppState extends ChangeNotifier {
           'album': item.album,
         }),
         playCount: previous.playCount,
+        shuffleWeight: previous.shuffleWeight,
         isFavorite: previous.isFavorite,
         lastPosition: previous.lastPosition,
         // 用户单独选择的歌词优先于扫描时发现的同名歌词。

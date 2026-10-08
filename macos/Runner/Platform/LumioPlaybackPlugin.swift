@@ -14,6 +14,8 @@ final class LumioPlaybackPlugin: NSObject, FlutterPlugin {
   private var activeAccessRoot: URL?
   private var endObserver: NSObjectProtocol?
   private var itemStatusObservation: NSKeyValueObservation?
+  private var videoSizeObservation: NSKeyValueObservation?
+  private var videoGeometryTask: Task<Void, Never>?
   private var playbackObservation: NSKeyValueObservation?
   private var preferredRate: Float = 1
   private var currentMetadata: [String: Any] = [:]
@@ -56,6 +58,8 @@ final class LumioPlaybackPlugin: NSObject, FlutterPlugin {
     }
     playbackObservation?.invalidate()
     itemStatusObservation?.invalidate()
+    videoSizeObservation?.invalidate()
+    videoGeometryTask?.cancel()
     activeAccessRoot?.stopAccessingSecurityScopedResource()
     texture.dispose()
   }
@@ -123,7 +127,7 @@ final class LumioPlaybackPlugin: NSObject, FlutterPlugin {
       let arguments = call.arguments as? [String: Any]
       let delta = Float(double(arguments?["delta"], fallback: 0))
       player.volume = (player.volume + delta).clamped(to: 0...1)
-      result(nil)
+      result(Double(player.volume))
     case "share":
       share(arguments: call.arguments, result: result)
     case "shareMany":
@@ -147,8 +151,40 @@ final class LumioPlaybackPlugin: NSObject, FlutterPlugin {
     spectrum.reset()
     observe(item: item)
     let kind = values["kind"] as? String ?? "audio"
+    videoSizeObservation?.invalidate()
+    videoGeometryTask?.cancel()
     if kind == "video" {
       texture.attach(to: item)
+      videoGeometryTask = Task { [weak self, weak item] in
+        guard let item else { return }
+        do {
+          let tracks = try await item.asset.loadTracks(withMediaType: .video)
+          guard let track = tracks.first else { return }
+          let transform = try await track.load(.preferredTransform)
+          guard !transform.isIdentity, !Task.isCancelled else { return }
+          // Texture 不经 AVPlayerLayer；旋转素材需先按轨道变换呈现，避免尺寸正确但内容变形。
+          let composition = try await AVVideoComposition.videoComposition(withPropertiesOf: item.asset)
+          await MainActor.run { [weak self, weak item] in
+            guard !Task.isCancelled, let self, let item,
+                  self.player.currentItem === item else { return }
+            item.videoComposition = composition
+          }
+        } catch {
+          NSLog("Lumio video geometry: %@", error.localizedDescription)
+        }
+      }
+      videoSizeObservation = item.observe(\.presentationSize, options: [.initial, .new]) {
+        [weak self] item, _ in
+        let size = item.presentationSize
+        guard size.width > 0, size.height > 0 else { return }
+        DispatchQueue.main.async { [weak self, weak item] in
+          guard let self, let item, self.player.currentItem === item else { return }
+          self.channel.invokeMethod("videoSizeChanged", arguments: [
+            "mediaId": values["mediaId"] as? String ?? "",
+            "aspectRatio": Double(size.width / size.height),
+          ])
+        }
+      }
     } else {
       texture.detach()
       spectrum.attach(to: item)
@@ -194,6 +230,10 @@ final class LumioPlaybackPlugin: NSObject, FlutterPlugin {
   }
 
   private func stopPlayback() {
+    videoGeometryTask?.cancel()
+    videoGeometryTask = nil
+    videoSizeObservation?.invalidate()
+    videoSizeObservation = nil
     spectrum.reset()
     player.pause()
     player.replaceCurrentItem(with: nil)

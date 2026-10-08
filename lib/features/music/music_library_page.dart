@@ -685,6 +685,10 @@ class _SongMenu extends StatelessWidget {
             enabled: item.lyrics.isNotEmpty && !state.isExportingLyrics,
             child: const Text('导出歌词')),
         const PopupMenuItem(value: 'edit', child: Text('编辑信息')),
+        PopupMenuItem(
+          value: 'shuffleWeight',
+          child: Text('随机播放权重 · ${item.shuffleWeight}'),
+        ),
         const PopupMenuItem(value: 'authorLyrics', child: Text('制作歌词 / 继续草稿')),
         if (item.sourceId != 'lumio-received') ...[
           const PopupMenuItem(value: 'renameFile', child: Text('重命名文件')),
@@ -716,6 +720,8 @@ class _SongMenu extends StatelessWidget {
             runLyricsExport(context, state, mediaId: item.id);
           case 'edit':
             _showMetadataDialog(context, state, item);
+          case 'shuffleWeight':
+            _showShuffleWeightDialog(context, state, item);
           case 'authorLyrics':
             Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => LyricAuthoringPage(state: state, item: item)));
@@ -888,6 +894,7 @@ String _mediaDetailText(MediaItem item) {
       '专辑：${item.album}'
     else
       '合集/相册：${item.album}',
+    if (item.kind == MediaKind.audio) '随机播放权重：${item.shuffleWeight}',
     '时长：${formatDuration(item.duration)}',
     if (item.kind == MediaKind.video && item.resolution != null)
       '分辨率：${item.resolution}',
@@ -899,6 +906,69 @@ String _mediaDetailText(MediaItem item) {
     '路径：${item.path}',
   ];
   return rows.where((row) => !row.endsWith('：')).join('\n');
+}
+
+Future<void> _showShuffleWeightDialog(
+  BuildContext context,
+  LumioAppState state,
+  MediaItem item,
+) async {
+  var weight = item.shuffleWeight.clamp(1, MediaItem.maximumShuffleWeight);
+  final saved = await showDialog<int>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setDialogState) => AlertDialog(
+        title: const Text('随机播放权重'),
+        scrollable: true,
+        content: SizedBox(
+          width: 320,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 16),
+              Text('权重：$weight（默认 1）',
+                  style: Theme.of(context).textTheme.titleMedium),
+              Slider(
+                value: weight.toDouble(),
+                min: 1,
+                max: MediaItem.maximumShuffleWeight.toDouble(),
+                divisions: MediaItem.maximumShuffleWeight - 1,
+                label: '$weight',
+                onChanged: (value) =>
+                    setDialogState(() => weight = value.round()),
+              ),
+              const Text('仅在随机播放时生效。权重越高，越容易被选中；可能连续播放同一首。'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => setDialogState(() => weight = 1),
+            child: const Text('恢复默认'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(weight),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (saved == null || !context.mounted) return;
+  var message = '已保存随机播放权重：$saved';
+  try {
+    await state.setShuffleWeight(item.id, saved);
+  } catch (_) {
+    message = '权重已保存；播放器同步失败，下次开始播放时生效。';
+  }
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
 }
 
 Future<void> _showMetadataDialog(
