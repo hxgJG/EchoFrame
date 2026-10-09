@@ -1,6 +1,7 @@
 import Cocoa
 import CryptoKit
 import FlutterMacOS
+import LocalAuthentication
 import Security
 
 final class LumioDeviceTransferPlugin: NSObject, FlutterPlugin {
@@ -16,7 +17,8 @@ final class LumioDeviceTransferPlugin: NSObject, FlutterPlugin {
   private weak var window: NSWindow?
   private var leases: [String: Lease] = [:]
   private let blockSize = 256 * 1024
-  private let identityService = "com.hxg.lumio.device-transfer.identity.v1"
+  // Keep the production service unchanged, but isolate QA and other app variants.
+  private let identityService = (Bundle.main.bundleIdentifier ?? "com.hxg.lumio") + ".device-transfer.identity.v1"
   private var transferLock: Int32 = -1
 
   static func register(with registrar: FlutterPluginRegistrar) {}
@@ -43,10 +45,10 @@ final class LumioDeviceTransferPlugin: NSObject, FlutterPlugin {
         case "acquireTransferLock":
           try acquireTransferLock()
           value = nil
-        case "loadIdentity": value = try loadIdentity()
+        case "loadIdentity": value = try loadIdentity(allowInteraction: args["allowInteraction"] as? Bool == true)
         case "saveIdentity":
           guard let text = args["value"] as? String, text.utf8.count <= 32768 else { throw CocoaError(.fileReadCorruptFile) }
-          try saveIdentity(text)
+          try saveIdentity(text, allowInteraction: args["allowInteraction"] as? Bool == true)
           value = nil
         case "openMedia":
           guard let path = args["path"] as? String else { throw CocoaError(.fileReadNoSuchFile) }
@@ -69,7 +71,14 @@ final class LumioDeviceTransferPlugin: NSObject, FlutterPlugin {
         DispatchQueue.main.async { result(value) }
       } catch {
         DispatchQueue.main.async {
-          result(FlutterError(code: "transferPlatformError", message: error.localizedDescription, details: nil))
+          let nativeError = error as NSError
+          if nativeError.domain == NSOSStatusErrorDomain,
+             [errSecInteractionNotAllowed, errSecAuthFailed, errSecUserCanceled].contains(OSStatus(nativeError.code)) {
+            result(FlutterError(code: "transferIdentityAuthorizationRequired",
+              message: "本机安全身份需要钥匙串授权。点击“授权钥匙串”后再按系统提示操作；未重置安全码。", details: nil))
+          } else {
+            result(FlutterError(code: "transferPlatformError", message: error.localizedDescription, details: nil))
+          }
         }
       }
     }
@@ -107,12 +116,17 @@ final class LumioDeviceTransferPlugin: NSObject, FlutterPlugin {
     transferLock = fd
   }
 
-  private func loadIdentity() throws -> String? {
+  private func loadIdentity(allowInteraction: Bool) throws -> String? {
     var query = identityQuery()
+    let context = LAContext()
+    context.interactionNotAllowed = !allowInteraction
+    query[kSecUseAuthenticationContext as String] = context
     query[kSecReturnData as String] = true
     query[kSecMatchLimit as String] = kSecMatchLimitOne
     var item: CFTypeRef?
-    let status = SecItemCopyMatching(query as CFDictionary, &item)
+    let status = try withIdentityInteraction(allowInteraction) {
+      SecItemCopyMatching(query as CFDictionary, &item)
+    }
     if status == errSecItemNotFound { return nil }
     guard status == errSecSuccess, let data = item as? Data,
           let text = String(data: data, encoding: .utf8) else {
@@ -121,12 +135,30 @@ final class LumioDeviceTransferPlugin: NSObject, FlutterPlugin {
     return text
   }
 
-  private func saveIdentity(_ text: String) throws {
+  private func saveIdentity(_ text: String, allowInteraction: Bool) throws {
     var query = identityQuery()
+    let context = LAContext()
+    context.interactionNotAllowed = !allowInteraction
+    query[kSecUseAuthenticationContext as String] = context
     query[kSecValueData as String] = Data(text.utf8)
     query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-    let status = SecItemAdd(query as CFDictionary, nil)
+    let status = try withIdentityInteraction(allowInteraction) {
+      SecItemAdd(query as CFDictionary, nil)
+    }
     guard status == errSecSuccess else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
+  }
+
+  private func withIdentityInteraction(_ allowed: Bool, operation: () -> OSStatus) throws -> OSStatus {
+    if allowed { return operation() }
+    // Existing login-keychain items do not honor LAContext's no-UI setting.
+    // Scope the legacy process flag to this serialized lookup and restore it.
+    var previous: DarwinBoolean = true
+    var status = SecKeychainGetUserInteractionAllowed(&previous)
+    guard status == errSecSuccess else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
+    status = SecKeychainSetUserInteractionAllowed(false)
+    guard status == errSecSuccess else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
+    defer { SecKeychainSetUserInteractionAllowed(previous.boolValue) }
+    return operation()
   }
 
   private func receivedRoot() throws -> URL {

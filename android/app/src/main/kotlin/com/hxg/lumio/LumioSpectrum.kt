@@ -61,6 +61,8 @@ internal class SpectrumAudioProcessor(private val capture: SpectrumCapture) : Ba
         else AudioProcessor.AudioFormat.NOT_SET
 
     override fun queueInput(inputBuffer: ByteBuffer) {
+        // Media3 会以共享 EMPTY_BUFFER 推进管线；零长度输出可能仍是同一实例，不能 put 自身。
+        if (!inputBuffer.hasRemaining()) return
         capture.capture(inputBuffer, inputAudioFormat)
         val output = replaceOutputBuffer(inputBuffer.remaining())
         output.put(inputBuffer).flip()

@@ -39,6 +39,7 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.provider.Settings
 import android.util.Rational
+import android.util.Log
 import android.view.Surface
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem as Media3MediaItem
@@ -194,11 +195,13 @@ class MainActivity : FlutterActivity() {
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            Log.e("LumioPlayback", "${error.errorCodeName}: ${error.message}", error)
             playbackChannel?.invokeMethod(
                 "error",
                 mapOf(
                     "mediaId" to currentPlaybackMediaId,
-                    "message" to (error.message ?: "Media3 playback failed."),
+                    "message" to (LumioPlaybackService.playbackFailureDetails
+                        ?: "${error.errorCodeName}: ${error.message ?: "视频或音频加载失败。"}"),
                 ),
             )
         }
@@ -209,7 +212,7 @@ class MainActivity : FlutterActivity() {
 
         override fun onVideoSizeChanged(videoSize: VideoSize) {
             if (videoSize.width <= 0 || videoSize.height <= 0) return
-            videoTextureEntry?.surfaceTexture()?.setDefaultBufferSize(videoSize.width, videoSize.height)
+            // 解码器负责 Surface 缓冲尺寸；此回调只报告展示比例，不重配正在解码的纹理。
             playbackChannel?.invokeMethod(
                 "videoSizeChanged",
                 mapOf(
@@ -402,6 +405,7 @@ class MainActivity : FlutterActivity() {
         try {
             result.success(action(controller))
         } catch (error: Exception) {
+            Log.e("LumioPlayback", errorCode, error)
             result.error(errorCode, error.message ?: "Media3 operation failed.", null)
         }
     }
@@ -1317,23 +1321,26 @@ class MainActivity : FlutterActivity() {
         }
 
         val current = mediaItems[currentIndex]
-        currentPlaybackMediaId = current.mediaId
-        currentPlaybackTitle = current.mediaMetadata.title?.toString().orEmpty()
-        currentPlaybackArtist = current.mediaMetadata.artist?.toString().orEmpty()
-        currentPlaybackAlbum = current.mediaMetadata.albumTitle?.toString().orEmpty()
-        currentPlaybackKind = current.mediaMetadata.extras?.getString("kind").orEmpty()
-        completionEventSent = false
-        val textureId = if (currentPlaybackKind == "video") {
-            prepareVideoSurface()
-        } else {
-            releaseVideoSurface()
-            null
-        }
+        val kind = current.mediaMetadata.extras?.getString("kind").orEmpty()
         withMediaController(result, "playFailed") { controller ->
+            // 连接控制器会回放旧会话状态；连接完成后再设置本次媒体，避免被旧状态覆盖。
+            currentPlaybackMediaId = current.mediaId
+            currentPlaybackTitle = current.mediaMetadata.title?.toString().orEmpty()
+            currentPlaybackArtist = current.mediaMetadata.artist?.toString().orEmpty()
+            currentPlaybackAlbum = current.mediaMetadata.albumTitle?.toString().orEmpty()
+            currentPlaybackKind = kind
+            completionEventSent = false
+            val textureId = if (kind == "video") {
+                prepareVideoSurface()
+            } else {
+                releaseVideoSurface()
+                null
+            }
             playbackCatalog = mediaItems
             val weightedItems = weightedPlaybackItems()
             val weightedCurrentIndex = weightedItems.indexOfFirst { it.mediaId == current.mediaId }
-            if (currentPlaybackKind == "video") {
+            check(weightedCurrentIndex >= 0) { "播放队列中没有当前媒体。" }
+            if (kind == "video") {
                 videoSurface?.let(controller::setVideoSurface)
             } else {
                 controller.clearVideoSurface()
@@ -1341,6 +1348,7 @@ class MainActivity : FlutterActivity() {
             controller.setMediaItems(weightedItems, weightedCurrentIndex, startPositionMs.coerceAtLeast(0L))
             controller.setPlaybackSpeed(playbackSpeed)
             controller.volume = volumeScale
+            LumioPlaybackService.clearPlaybackFailure()
             controller.prepare()
             controller.play()
             applyEqualizer(controller.audioSessionId)
@@ -1401,6 +1409,9 @@ class MainActivity : FlutterActivity() {
 
     private fun resumeMedia(result: MethodChannel.Result) {
         withMediaController(result, "resumeFailed") { controller ->
+            if (controller.playbackState == Player.STATE_IDLE && controller.mediaItemCount > 0) {
+                controller.prepare()
+            }
             controller.play()
             updatePictureInPictureParams(true)
             null
@@ -1429,6 +1440,11 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun weightedPlaybackItems(): List<Media3MediaItem> {
+        // 普通播放、视频以及默认权重直接沿用原队列，权重只作用于自定义随机音乐。
+        if (!playbackShuffleEnabled || playbackCatalog.none {
+                it.mediaMetadata.extras?.getString("kind") == "audio" &&
+                    (it.mediaMetadata.extras?.getInt("shuffleWeight", 1) ?: 1) > 1
+            }) return playbackCatalog
         val weights = playbackCatalog.map {
             if (it.mediaMetadata.extras?.getString("kind") == "audio")
                 it.mediaMetadata.extras?.getInt("shuffleWeight", 1) ?: 1 else 1

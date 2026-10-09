@@ -177,6 +177,31 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                           ),
                     ),
                     const SizedBox(height: 24),
+                    if (!isVideo && state.playbackError != null)
+                      Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.error_outline_rounded),
+                          title: const Text('播放失败'),
+                          subtitle: Text(state.playbackError!,
+                              maxLines: 2, overflow: TextOverflow.ellipsis),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                tooltip: '查看详情',
+                                onPressed: () => _showPlaybackError(
+                                    context, state.playbackError!, '音频播放错误'),
+                                icon: const Icon(Icons.info_outline_rounded),
+                              ),
+                              IconButton(
+                                tooltip: '重新播放',
+                                onPressed: () => state.play(item),
+                                icon: const Icon(Icons.refresh_rounded),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     _ProgressControl(state: state, item: item),
                     const SizedBox(height: 16),
                     _PrimaryControls(state: state),
@@ -556,6 +581,8 @@ class _VideoStage extends StatelessWidget {
                         settings: state.settings,
                       ),
               ),
+            if (state.playbackError != null)
+              _VideoPlaybackError(state: state, item: item),
           ],
         ),
       ),
@@ -792,6 +819,8 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
                           settings: state.settings,
                         ),
                 ),
+              if (state.playbackError != null && item != null)
+                _VideoPlaybackError(state: state, item: item),
               Positioned(
                 left: 8,
                 right: 8,
@@ -877,6 +906,71 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
       ),
     );
   }
+}
+
+class _VideoPlaybackError extends StatelessWidget {
+  const _VideoPlaybackError({required this.state, required this.item});
+
+  final LumioAppState state;
+  final MediaItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final message = state.playbackError ?? '视频播放失败。';
+    return ColoredBox(
+      color: Colors.black.withValues(alpha: 0.85),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('视频播放失败',
+                  style: TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              Text(message,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextButton(
+                      onPressed: () => state.play(item),
+                      child: const Text('重新播放',
+                          style: TextStyle(color: Colors.white))),
+                  TextButton(
+                    onPressed: () =>
+                        _showPlaybackError(context, message, '视频播放错误'),
+                    child: const Text('查看详情',
+                        style: TextStyle(color: Colors.white70)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _showPlaybackError(
+    BuildContext context, String message, String title) {
+  return showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: SingleChildScrollView(child: SelectableText(message)),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('关闭')),
+      ],
+    ),
+  );
 }
 
 class _VideoTextureView extends StatelessWidget {

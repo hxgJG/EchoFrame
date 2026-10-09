@@ -31,17 +31,21 @@ class TransferIdentity {
   }
 
   static Future<TransferIdentity>? _loading;
-  static Future<TransferIdentity> load() =>
-      _loading ??= _load().catchError((Object error) {
+  static Future<TransferIdentity> load({bool allowInteraction = false}) =>
+      _loading ??=
+          _load(allowInteraction: allowInteraction).catchError((Object error) {
         _loading = null;
         throw error;
       });
 
-  static Future<TransferIdentity> _load() async {
-    var value = await channel.invokeMethod<String>('loadIdentity');
+  static Future<TransferIdentity> _load(
+      {required bool allowInteraction}) async {
+    var value = await channel.invokeMethod<String>(
+        'loadIdentity', {'allowInteraction': allowInteraction});
     if (value == null) {
       value = await compute(_generate, 2048);
-      await channel.invokeMethod<void>('saveIdentity', {'value': value});
+      await channel.invokeMethod<void>('saveIdentity',
+          {'value': value, 'allowInteraction': allowInteraction});
     }
     return fromStored(value!);
   }

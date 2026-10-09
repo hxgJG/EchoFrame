@@ -43,6 +43,15 @@ class _VideoPageState extends State<VideoPage>
       appBar: AppBar(
         title: const Text('视频库'),
         actions: <Widget>[
+          IconButton(
+            tooltip: state.platformCapabilities.supportsFolderPicker
+                ? '添加视频或文件夹'
+                : '扫描本地视频',
+            onPressed: state.isUpdatingMediaSources || state.isScanningLibrary
+                ? null
+                : () => _addVideos(context, state),
+            icon: const Icon(Icons.video_call_rounded),
+          ),
           if (state.platformCapabilities.supportsSubtitleEditing)
             IconButton(
                 tooltip: '字幕工作台',
@@ -80,6 +89,18 @@ class _VideoPageState extends State<VideoPage>
   }
 }
 
+Future<void> _addVideos(BuildContext context, LumioAppState state) async {
+  if (state.platformCapabilities.supportsFolderPicker) {
+    await state.addVideoSources();
+  } else {
+    await state.scanMediaLibrary();
+  }
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(state.libraryStatusMessage)),
+  );
+}
+
 void _openSearch(BuildContext context, LumioAppState state) {
   Navigator.of(context).push(
     MaterialPageRoute<void>(builder: (_) => SearchPage(state: state)),
@@ -97,6 +118,20 @@ class _VideoList extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: <Widget>[
         const SectionHeader(title: '本地视频'),
+        if (state.videoItems.isEmpty)
+          _VideoEmptyState(
+            icon: Icons.video_library_outlined,
+            title: '还没有本地视频',
+            message: state.platformCapabilities.supportsFolderPicker
+                ? '选择 MP4、MOV 或 M4V 视频，也可添加视频所在的文件夹。不会复制源文件。'
+                : '扫描本机媒体，将有权限访问的视频加入视频库。',
+            actionLabel: state.isScanningLibrary || state.isUpdatingMediaSources
+                ? '正在导入…'
+                : '添加视频',
+            onAction: state.isScanningLibrary || state.isUpdatingMediaSources
+                ? null
+                : () => _addVideos(context, state),
+          ),
         ...state.videoItems.map(
           (item) => MediaTile(
             item: item,
@@ -117,6 +152,46 @@ class _VideoList extends StatelessWidget {
         const SizedBox(height: 18),
         _PhaseNote(),
       ],
+    );
+  }
+}
+
+class _VideoEmptyState extends StatelessWidget {
+  const _VideoEmptyState({
+    required this.icon,
+    required this.title,
+    required this.message,
+    required this.actionLabel,
+    required this.onAction,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final String actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card.outlined(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: <Widget>[
+            Icon(icon, size: 40, color: LumioTheme.videoColor(context)),
+            const SizedBox(height: 16),
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Text(message, textAlign: TextAlign.center),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: onAction,
+              icon: const Icon(Icons.add_rounded),
+              label: Text(actionLabel),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

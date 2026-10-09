@@ -2,6 +2,7 @@ package com.hxg.lumio
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -46,6 +47,13 @@ class LumioPlaybackService : MediaSessionService() {
         }
     }
     private val playerListener = object : Player.Listener {
+        override fun onPlayerError(error: PlaybackException) {
+            // MediaSession 传递异常时可能丢失 cause；在播放器所在服务保留原始栈。
+            playbackFailureDetails = "${error.errorCodeName}: ${error.message}\n" +
+                error.stackTraceToString().take(12000)
+            Log.e("LumioPlayback", "${error.errorCodeName}: ${error.message}", error)
+        }
+
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             reconcileSpectrum()
             if (isPlaying) {
@@ -265,6 +273,11 @@ class LumioPlaybackService : MediaSessionService() {
     }
 
     companion object {
+        @Volatile var playbackFailureDetails: String? = null
+            private set
+
+        fun clearPlaybackFailure() { playbackFailureDetails = null }
+
         @Volatile private var spectrumRequested = false
         @Volatile
         private var activeInstance: LumioPlaybackService? = null

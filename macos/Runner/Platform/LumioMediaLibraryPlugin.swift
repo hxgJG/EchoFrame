@@ -19,6 +19,8 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
   private let scanStateLock = NSLock()
   private var scanCancelled = false
   private var exportingLyrics = false
+  private var externalOpenReady = false
+  private var pendingExternalFiles: [URL] = []
   private var mediaIndex: [String: IndexedMedia] = [:]
   private let snapshotURL = LumioPaths.applicationSupportDirectory
     .appendingPathComponent("scan_snapshot.json")
@@ -47,6 +49,7 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
     )
     super.init()
     registrar.addMethodCallDelegate(self, channel: channel)
+    registrar.addApplicationDelegate(self)
     queue.async { [weak self] in
       guard let self, let snapshot = self.loadSnapshot() else { return }
       self.rebuildIndex(from: snapshot)
@@ -55,8 +58,14 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
 
   func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
+    case "externalOpenReady":
+      externalOpenReady = (call.arguments as? [String: Any])?["ready"] as? Bool ?? false
+      result(nil)
+      deliverExternalFiles()
     case "addSources":
       presentSourcePicker(result: result)
+    case "addVideoSources":
+      presentSourcePicker(result: result, videos: true)
     case "listSources":
       result(bookmarkStore.list())
     case "removeSource":
@@ -168,6 +177,85 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
     }
   }
 
+  func handleOpen(_ urls: [URL]) -> Bool {
+    let files = urls.filter(\.isFileURL)
+    guard !files.isEmpty else { return false }
+    window?.deminiaturize(nil)
+    window?.makeKeyAndOrderFront(nil)
+    openExternalFiles(files)
+    return true
+  }
+
+  private func openExternalFiles(_ urls: [URL]) {
+    pendingExternalFiles.append(contentsOf: urls)
+    deliverExternalFiles()
+  }
+
+  private func deliverExternalFiles() {
+    // 冷启动时先等待 Dart 恢复媒体库，避免新导入的条目被旧状态覆盖。
+    guard externalOpenReady, !pendingExternalFiles.isEmpty else { return }
+    let urls = pendingExternalFiles
+    pendingExternalFiles.removeAll()
+    queue.async { [weak self] in
+      guard let self else { return }
+      var items: [[String: Any]] = []
+      var failures: [String] = []
+      for url in urls {
+        let requested = url.standardizedFileURL
+        guard self.videoExtensions.contains(requested.pathExtension.lowercased()) else {
+          failures.append("\(requested.lastPathComponent)：仅支持 MP4、MOV、M4V。")
+          continue
+        }
+        let scoped = requested.startAccessingSecurityScopedResource()
+        defer { if scoped { requested.stopAccessingSecurityScopedResource() } }
+        do {
+          let values = try requested.resourceValues(forKeys: [
+            .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey,
+            .creationDateKey, .contentModificationDateKey, .fileResourceIdentifierKey,
+          ])
+          guard values.isRegularFile == true, values.isSymbolicLink != true else {
+            throw CocoaError(.fileReadUnsupportedScheme)
+          }
+          let file = requested.resolvingSymlinksInPath()
+          var source = self.bookmarkStore.resolvedSources().first {
+            guard let root = $0.url else { return false }
+            return self.path(file.path, isInside: root.standardizedFileURL.path)
+          }
+          if source == nil {
+            _ = try self.bookmarkStore.add(urls: [file])
+            source = self.bookmarkStore.resolvedSources().first { $0.url?.standardizedFileURL == file }
+          }
+          guard let source, let root = source.url else { throw CocoaError(.fileReadNoPermission) }
+          items.append(self.mediaItem(url: file, root: root.standardizedFileURL, sourceID: source.record.id,
+                                      kind: "video", resourceValues: values))
+        } catch {
+          failures.append("\(requested.lastPathComponent)：\(error.localizedDescription)")
+        }
+      }
+      if !items.isEmpty {
+        do {
+          var snapshot = self.loadSnapshot() ?? ["schemaVersion": 2, "status": "completed", "audioItems": [], "videoItems": []]
+          var videos = snapshot["videoItems"] as? [[String: Any]] ?? []
+          for item in items {
+            if let index = videos.firstIndex(where: {
+              $0["id"] as? String == item["id"] as? String ||
+                URL(fileURLWithPath: $0["path"] as? String ?? "").standardizedFileURL.path == item["path"] as? String
+            }) {
+              videos[index] = item
+            } else { videos.append(item) }
+          }
+          snapshot["videoItems"] = videos
+          try self.writeSnapshot(snapshot)
+          self.rebuildIndex(from: snapshot)
+        } catch { failures.append("保存索引失败：\(error.localizedDescription)") }
+      }
+      let response: [String: Any] = ["items": items, "message": failures.joined(separator: "\n")]
+      DispatchQueue.main.async {
+        self.channel.invokeMethod("externalMediaOpened", arguments: response)
+      }
+    }
+  }
+
   private func exportLyrics(_ arguments: Any?, result: @escaping FlutterResult) {
     guard !exportingLyrics else {
       result(["status": "failed", "message": "已有歌词正在导出。"])
@@ -251,13 +339,16 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
     else { completion(panel.runModal()) }
   }
 
-  private func presentSourcePicker(result: @escaping FlutterResult) {
+  private func presentSourcePicker(result: @escaping FlutterResult, videos: Bool = false) {
     let panel = NSOpenPanel()
-    panel.title = "添加媒体文件夹"
-    panel.message = "忆光只会读取你明确选择的文件夹。"
+    panel.title = videos ? "添加视频或文件夹" : "添加媒体文件夹"
+    panel.message = videos ? "选择 MP4、MOV、M4V 视频或所在文件夹；仅建立索引，不复制视频。" : "忆光只会读取你明确选择的文件夹。"
     panel.prompt = "添加"
     panel.canChooseDirectories = true
-    panel.canChooseFiles = false
+    panel.canChooseFiles = videos
+    if videos {
+      panel.allowedContentTypes = videoExtensions.compactMap { UTType(filenameExtension: $0) }
+    }
     panel.allowsMultipleSelection = true
     panel.canCreateDirectories = false
     panel.resolvesAliases = true
@@ -395,6 +486,7 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
     var audioItems: [[String: Any]] = []
     var videoItems: [[String: Any]] = []
     var inaccessibleSources = 0
+    var indexedPaths: Set<String> = []
 
     for source in bookmarkStore.resolvedSources() {
       guard !isScanCancelled() else {
@@ -415,20 +507,27 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
         .creationDateKey,
         .fileResourceIdentifierKey,
       ]
-      guard let enumerator = FileManager.default.enumerator(
-        at: root,
-        includingPropertiesForKeys: keys,
-        options: [.skipsHiddenFiles, .skipsPackageDescendants]
-      ) else { continue }
+      let isDirectory = (try? root.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+      let files: AnySequence<URL>
+      if isDirectory {
+        guard let enumerator = FileManager.default.enumerator(
+          at: root,
+          includingPropertiesForKeys: keys,
+          options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else { continue }
+        files = AnySequence { AnyIterator { enumerator.nextObject() as? URL } }
+      } else {
+        files = AnySequence(CollectionOfOne(root))
+      }
 
-      for case let fileURL as URL in enumerator {
+      for fileURL in files {
         guard !isScanCancelled() else {
           return ["status": "cancelled", "message": "已取消扫描，媒体库保持不变。"]
         }
         let values = try? fileURL.resourceValues(forKeys: Set(keys))
         guard values?.isRegularFile == true, values?.isSymbolicLink != true else { continue }
         let normalizedPath = fileURL.standardizedFileURL.path
-        if !includedFolders.isEmpty,
+        if isDirectory, !includedFolders.isEmpty,
            !includedFolders.contains(where: { path(normalizedPath, isInside: $0) }) {
           continue
         }
@@ -444,6 +543,7 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
         } else {
           continue
         }
+        guard indexedPaths.insert(normalizedPath).inserted else { continue }
         let item = mediaItem(
           url: fileURL,
           root: root,
@@ -463,7 +563,7 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
 
     audioItems.sort { ($0["title"] as? String ?? "") < ($1["title"] as? String ?? "") }
     videoItems.sort { ($0["title"] as? String ?? "") < ($1["title"] as? String ?? "") }
-    var message = "已从授权文件夹扫描媒体。"
+    var message = "已索引 \(audioItems.count) 首音乐、\(videoItems.count) 个视频。"
     if inaccessibleSources > 0 {
       message += " \(inaccessibleSources) 个来源需要重新授权。"
     }
@@ -488,7 +588,8 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
     let durationMs = durationSeconds.isFinite && durationSeconds > 0
       ? Int64(durationSeconds * 1000)
       : 0
-    let relativePath = url.path.replacingOccurrences(
+    let relativePath = url.standardizedFileURL == root.standardizedFileURL
+      ? url.lastPathComponent : url.path.replacingOccurrences(
       of: root.path.hasSuffix("/") ? root.path : root.path + "/",
       with: "",
       options: [.anchored]

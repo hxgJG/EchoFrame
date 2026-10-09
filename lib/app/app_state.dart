@@ -97,6 +97,7 @@ class LumioAppState extends ChangeNotifier {
   final PlaybackRepository _playbackRepository;
   final OnlineEnhancementRepository _onlineEnhancementRepository;
   final PlatformCapabilities _platformCapabilities;
+  VoidCallback? onExternalMediaOpened;
   final Random _random = Random();
   final PlaybackInterruptionController _interruptionController =
       PlaybackInterruptionController();
@@ -151,6 +152,7 @@ class LumioAppState extends ChangeNotifier {
   String _libraryStatusMessage = '尚未扫描本机媒体。';
   int? _videoTextureId;
   double? _videoAspectRatio;
+  String? _playbackError;
   String _backupStatusMessage = '播放列表和设置项会自动离线保存。';
   bool _isInPictureInPicture = false;
   double _playbackSpeed = 1.0;
@@ -241,6 +243,7 @@ class LumioAppState extends ChangeNotifier {
   String get libraryStatusMessage => _libraryStatusMessage;
   int? get videoTextureId => _videoTextureId;
   double? get videoAspectRatio => _videoAspectRatio;
+  String? get playbackError => _playbackError;
   bool get isInPictureInPicture => _isInPictureInPicture;
   int get hiddenMediaCount => _hiddenMediaIds.length;
   String get backupStatusMessage => _backupStatusMessage;
@@ -702,6 +705,7 @@ class LumioAppState extends ChangeNotifier {
     _interruptionController.cancelPendingResume();
     final startPosition = _initialPlaybackPosition(item);
     _videoAspectRatio = null;
+    _playbackError = null;
     _currentItem = item.copyWith(playCount: item.playCount + 1);
     _position = startPosition;
     _isPlaying = true;
@@ -722,6 +726,7 @@ class LumioAppState extends ChangeNotifier {
     )
         .catchError(
       (Object error) {
+        _playbackError = error.toString();
         _isPlaying = false;
         _stopPositionTimer();
         _libraryStatusMessage = '播放失败：$error';
@@ -756,6 +761,10 @@ class LumioAppState extends ChangeNotifier {
     if (_currentItem == null) {
       return;
     }
+    if (_playbackError != null && !_isPlaying) {
+      play(_currentItem!);
+      return;
+    }
     _isPlaying = !_isPlaying;
     if (_isPlaying) {
       _playbackRepository.setVolumeScale(1.0);
@@ -772,6 +781,7 @@ class LumioAppState extends ChangeNotifier {
             )
                 .catchError(
               (Object retryError) {
+                _playbackError = retryError.toString();
                 _isPlaying = false;
                 _stopPositionTimer();
                 _libraryStatusMessage = '播放失败：$retryError';
@@ -780,6 +790,7 @@ class LumioAppState extends ChangeNotifier {
               },
             );
           } else {
+            _playbackError = error.toString();
             _isPlaying = false;
             _stopPositionTimer();
             _libraryStatusMessage = '播放失败：$error';
@@ -1713,22 +1724,29 @@ class LumioAppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> addMediaSources() async {
+  Future<void> addMediaSources() => _addMediaSources();
+
+  Future<void> addVideoSources() => _addMediaSources(videos: true);
+
+  Future<void> _addMediaSources({bool videos = false}) async {
     if (!_platformCapabilities.supportsFolderPicker ||
-        _isUpdatingMediaSources) {
+        _isUpdatingMediaSources ||
+        _isScanningLibrary) {
       return;
     }
     _isUpdatingMediaSources = true;
     notifyListeners();
     try {
-      final added = await _mediaLibraryRepository.addSources();
+      final added = videos
+          ? await _mediaLibraryRepository.addVideoSources()
+          : await _mediaLibraryRepository.addSources();
       await _refreshMediaSources(notify: false);
       if (added.isNotEmpty) {
-        _libraryStatusMessage = '已添加 ${added.length} 个媒体文件夹，正在建立索引。';
+        _libraryStatusMessage = '已添加媒体来源，正在建立索引。';
         await scanMediaLibrary();
       }
     } catch (error) {
-      _libraryStatusMessage = '添加媒体文件夹失败：$error';
+      _libraryStatusMessage = '添加媒体来源失败：$error';
     } finally {
       _isUpdatingMediaSources = false;
       notifyListeners();
@@ -1953,7 +1971,39 @@ class LumioAppState extends ChangeNotifier {
     } finally {
       _lyricLibraryReady = true;
       if (!_disposed) notifyListeners();
+      if (!_disposed) {
+        await _mediaLibraryRepository
+            .setExternalOpenHandler(_handleExternalMediaOpened);
+      }
     }
+  }
+
+  void _handleExternalMediaOpened(List<MediaItem> items, String message) {
+    if (_disposed) return;
+    if (items.isEmpty) {
+      _libraryStatusMessage = message;
+      notifyListeners();
+      return;
+    }
+    final opened = <MediaItem>[];
+    for (final item in items) {
+      final index =
+          _videoItems.indexWhere((existing) =>
+              existing.id == item.id || existing.path == item.path);
+      // 再次从 Finder 打开同一文件时保留用户的标题、字幕和播放记录。
+      if (index >= 0) {
+        opened.add(_videoItems[index]);
+      } else {
+        _videoItems = [..._videoItems, item];
+        opened.add(item);
+      }
+    }
+    _section = AppSection.video;
+    _libraryStatusMessage =
+        message.isEmpty ? '已打开 ${opened.length} 个视频，源文件未复制。' : message;
+    unawaited(_refreshMediaSources());
+    play(opened.first);
+    onExternalMediaOpened?.call();
   }
 
   Future<void> _restoreLastScan() async {
@@ -2104,6 +2154,8 @@ class LumioAppState extends ChangeNotifier {
           _handlePlaybackCompleted();
         }
       case PlaybackEventType.error:
+        if (event.mediaId != null && event.mediaId != _currentItem?.id) return;
+        _playbackError = event.message.isEmpty ? '媒体播放失败。' : event.message;
         _isPlaying = false;
         _stopPositionTimer();
         _libraryStatusMessage =
@@ -2171,6 +2223,7 @@ class LumioAppState extends ChangeNotifier {
       lastPosition: Duration.zero,
     );
     _videoAspectRatio = null;
+    _playbackError = null;
     _replaceItem(_currentItem!);
     _position = Duration.zero;
     _isPlaying = true;
@@ -2689,6 +2742,7 @@ class LumioAppState extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    unawaited(_mediaLibraryRepository.setExternalOpenHandler(null));
     _deviceTransfer?.dispose();
     _lyricTimer?.cancel();
     lyricChanges.dispose();

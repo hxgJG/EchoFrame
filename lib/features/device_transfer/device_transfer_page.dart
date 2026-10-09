@@ -38,9 +38,10 @@ class _DeviceTransferPageState extends State<DeviceTransferPage> {
     unawaited(_initialize());
   }
 
-  Future<void> _initialize() async {
+  Future<void> _initialize({bool allowIdentityInteraction = false}) async {
     try {
-      await controller.initialize();
+      await controller.initialize(
+          allowIdentityInteraction: allowIdentityInteraction);
     } catch (_) {
       /* The controller exposes the initialization error and retry. */
     }
@@ -131,8 +132,13 @@ class _DeviceTransferPageState extends State<DeviceTransferPage> {
                                     Text(controller.error ?? '设备互传尚未初始化'),
                                     const SizedBox(height: 16),
                                     FilledButton(
-                                        onPressed: _initialize,
-                                        child: const Text('重试')),
+                                        onPressed: () => _initialize(
+                                            allowIdentityInteraction: controller
+                                                .identityAuthorizationRequired),
+                                        child: Text(controller
+                                                .identityAuthorizationRequired
+                                            ? '授权钥匙串'
+                                            : '重试')),
                                   ])))
                       : Column(children: [
                           if (controller.error case final error?)

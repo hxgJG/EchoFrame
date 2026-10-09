@@ -9,6 +9,29 @@ import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 
 class LumioSpectrumTest {
+    @Test fun sharedEmptyBufferIsSafeBeforeInputAfterFlushAndAtEnd() {
+        val processor = SpectrumAudioProcessor(SpectrumCapture())
+        processor.configure(AudioProcessor.AudioFormat(48000, 2, C.ENCODING_PCM_16BIT))
+        processor.flush()
+        processor.queueInput(AudioProcessor.EMPTY_BUFFER)
+        assertFalse(processor.output.hasRemaining())
+
+        val input = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder())
+        input.putShort(123).putShort(456).flip()
+        processor.queueInput(input)
+        val output = processor.output
+        assertEquals(123.toShort(), output.short)
+        assertEquals(456.toShort(), output.short)
+        processor.queueInput(AudioProcessor.EMPTY_BUFFER)
+        assertFalse(processor.output.hasRemaining())
+        processor.queueEndOfStream()
+        assertTrue(processor.isEnded)
+
+        processor.flush()
+        processor.queueInput(AudioProcessor.EMPTY_BUFFER)
+        assertFalse(processor.output.hasRemaining())
+    }
+
     private fun tone(frequency: Double, amplitude: Double = 0.5) =
         DoubleArray(1024) { amplitude * sin(2 * PI * frequency * it / 48000) }
 

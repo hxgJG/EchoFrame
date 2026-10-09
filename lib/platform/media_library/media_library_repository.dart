@@ -87,6 +87,12 @@ abstract class MediaLibraryRepository {
 
   Future<List<MediaSource>> addSources() async => const <MediaSource>[];
 
+  Future<List<MediaSource>> addVideoSources() async => const <MediaSource>[];
+
+  Future<void> setExternalOpenHandler(
+    void Function(List<MediaItem> items, String message)? handler,
+  ) async {}
+
   Future<List<MediaSource>> listSources() async => const <MediaSource>[];
 
   Future<void> removeSource(String sourceId) async {}

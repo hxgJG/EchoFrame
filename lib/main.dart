@@ -38,6 +38,7 @@ class _LumioAppState extends State<LumioApp> {
   void initState() {
     super.initState();
     state.desktopLyrics.onOpenCalibration = _openCalibration;
+    state.onExternalMediaOpened = _openExternalMedia;
   }
 
   @override
@@ -45,7 +46,9 @@ class _LumioAppState extends State<LumioApp> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.state != state) {
       oldWidget.state.desktopLyrics.onOpenCalibration = null;
+      oldWidget.state.onExternalMediaOpened = null;
       state.desktopLyrics.onOpenCalibration = _openCalibration;
+      state.onExternalMediaOpened = _openExternalMedia;
     }
   }
 
@@ -56,9 +59,20 @@ class _LumioAppState extends State<LumioApp> {
     }
   }
 
+  void _openExternalMedia() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+      _navigatorKey.currentState?.push(MaterialPageRoute<void>(
+        builder: (_) => NowPlayingPage(state: state),
+      ));
+    });
+  }
+
   @override
   void dispose() {
     state.desktopLyrics.onOpenCalibration = null;
+    state.onExternalMediaOpened = null;
     super.dispose();
   }
 

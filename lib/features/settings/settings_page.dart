@@ -506,7 +506,7 @@ class SettingsPage extends StatelessWidget {
                   title: const Text('媒体来源'),
                   subtitle: Text(state.mediaSources.isEmpty
                       ? '添加音乐或视频所在的文件夹'
-                      : '已授权 ${state.mediaSources.length} 个文件夹'),
+                      : '已授权 ${state.mediaSources.length} 个文件夹或文件'),
                   trailing: FilledButton.icon(
                     onPressed: state.isUpdatingMediaSources
                         ? null

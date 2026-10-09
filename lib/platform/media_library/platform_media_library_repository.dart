@@ -20,6 +20,27 @@ class PlatformMediaLibraryRepository implements MediaLibraryRepository {
   final MethodChannel _channel;
 
   @override
+  Future<void> setExternalOpenHandler(
+    void Function(List<MediaItem> items, String message)? handler,
+  ) async {
+    if (!Platform.isMacOS) return;
+    _channel.setMethodCallHandler(handler == null
+        ? null
+        : (call) async {
+            if (call.method != 'externalMediaOpened') return;
+            final values = call.arguments as Map<Object?, Object?>? ?? const {};
+            handler(_parseItems(values['items'], MediaKind.video),
+                values['message']?.toString() ?? '');
+          });
+    try {
+      await _channel
+          .invokeMethod<void>('externalOpenReady', {'ready': handler != null});
+    } on MissingPluginException {
+      _channel.setMethodCallHandler(null);
+    }
+  }
+
+  @override
   Future<LyricsExportResult> exportLyrics(LyricsExportFile file) async {
     if (!Platform.isMacOS && !Platform.isAndroid) {
       return const LyricsExportResult(
@@ -64,6 +85,13 @@ class PlatformMediaLibraryRepository implements MediaLibraryRepository {
     } on MissingPluginException {
       return const <MediaSource>[];
     }
+  }
+
+  @override
+  Future<List<MediaSource>> addVideoSources() async {
+    if (!Platform.isMacOS) return const [];
+    final raw = await _channel.invokeListMethod<Object?>('addVideoSources');
+    return _parseSources(raw);
   }
 
   @override

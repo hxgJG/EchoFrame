@@ -59,6 +59,7 @@ class DeviceTransferController extends ChangeNotifier
   String name = Platform.isMacOS ? 'Lumio · Mac' : 'Lumio · Android';
   String message = '仅局域网 · 无账号 · 无云端';
   String? error, discoveryWarning;
+  bool identityAuthorizationRequired = false;
   bool initializing = false,
       preparing = false,
       receiving = false,
@@ -87,21 +88,25 @@ class DeviceTransferController extends ChangeNotifier
     if (!_disposed) notifyListeners();
   }
 
-  Future<void> initialize() =>
-      _initialization ??= _initialize().catchError((Object e) {
+  Future<void> initialize({bool allowIdentityInteraction = false}) =>
+      _initialization ??=
+          _initialize(allowIdentityInteraction: allowIdentityInteraction)
+              .catchError((Object e) {
         _initialization = null;
         throw e;
       });
 
-  Future<void> _initialize() async {
+  Future<void> _initialize({required bool allowIdentityInteraction}) async {
     initializing = true;
     error = null;
+    identityAuthorizationRequired = false;
     _changed();
     try {
       await NativeTransferLease.channel
           .invokeMethod<void>('acquireTransferLock');
       store = await const PlatformTransferStorage().open();
-      identity = await TransferIdentity.load();
+      identity = await TransferIdentity.load(
+          allowInteraction: allowIdentityInteraction);
       deviceInfo = await TransferIdentity.deviceInfo();
       peers = TransferPeerStore(store!.root);
       await peers!.load();
@@ -121,6 +126,8 @@ class DeviceTransferController extends ChangeNotifier
     } catch (e) {
       identity = null;
       peers = null;
+      identityAuthorizationRequired = e is PlatformException &&
+          e.code == 'transferIdentityAuthorizationRequired';
       error = describe(e);
       rethrow;
     } finally {
