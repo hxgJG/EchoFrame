@@ -41,6 +41,7 @@ final class LumioSubtitleWorkbenchPlugin: NSObject, @preconcurrency FlutterPlugi
   }
 
   var hasExport: Bool { exportTask != nil }
+  var canRestoreBackup: Bool { sessionID == nil && !hasExport && !busy }
 
   func requestTermination(_ sender: NSApplication) -> NSApplication.TerminateReply? {
     guard hasExport else { return nil }

@@ -10,6 +10,7 @@ enum LumioMacOSPlugins {
     let registrar = registry.registrar(forPlugin: "LumioMacOSPlugins")
     let bookmarkStore = SecurityScopedBookmarkStore()
     let storage = LumioAppStoragePlugin(registrar: registrar)
+    let appUpdate = LumioAppUpdatePlugin(registrar: registrar)
     let transfer = LumioDeviceTransferPlugin(registrar: registrar, bookmarks: bookmarkStore, window: window)
     let mediaLibrary = LumioMediaLibraryPlugin(
       registrar: registrar,
@@ -24,6 +25,6 @@ enum LumioMacOSPlugins {
     let desktopLyrics = LumioDesktopLyricsPlugin(registrar: registrar, spectrum: playback.spectrum)
     let workbench = LumioSubtitleWorkbenchPlugin(registrar: registrar, window: window, bookmarks: bookmarkStore)
     subtitleWorkbench = workbench
-    retainedPlugins = [storage, transfer, mediaLibrary, playback, desktopLyrics, workbench]
+    retainedPlugins = [storage, appUpdate, transfer, mediaLibrary, playback, desktopLyrics, workbench]
   }
 }

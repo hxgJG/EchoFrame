@@ -10,7 +10,9 @@ import '../../platform/desktop_lyrics/desktop_lyrics_controller.dart';
 import '../music/lyric_library_page.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/lyrics_export_action.dart';
+import '../../shared/widgets/portable_backup_action.dart';
 import '../device_transfer/device_transfer_page.dart';
+import 'app_update_page.dart';
 
 const List<String> _equalizerBands = <String>['60', '230', '910', '4k', '14k'];
 
@@ -697,6 +699,33 @@ class SettingsPage extends StatelessWidget {
                 title: const Text('备份与恢复'),
                 subtitle: Text(state.backupStatusMessage),
               ),
+              if (state.portableBackupSupported)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                            '卸载迁移请使用下方外部备份。包含应用数据与 App 内媒体；外部音视频不重复打包，设备安全私钥不导出。'),
+                        const SizedBox(height: 8),
+                        Wrap(spacing: 10, runSpacing: 10, children: [
+                          FilledButton.icon(
+                              onPressed: state.portableBackupBusy
+                                  ? null
+                                  : () => exportPortableBackup(context, state),
+                              icon: const Icon(Icons.folder_zip_outlined),
+                              label: const Text('导出迁移备份')),
+                          OutlinedButton.icon(
+                              onPressed: state.portableBackupBusy
+                                  ? null
+                                  : () => importPortableBackup(context, state),
+                              icon: const Icon(Icons.upload_file_outlined),
+                              label: const Text('选择备份导入')),
+                        ]),
+                        const SizedBox(height: 12),
+                        const Text('以下为本机临时备份，卸载后可能丢失，不能替代迁移备份。'),
+                      ]),
+                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 child: Wrap(
@@ -706,7 +735,7 @@ class SettingsPage extends StatelessWidget {
                     FilledButton.icon(
                       onPressed: state.createBackup,
                       icon: const Icon(Icons.save_alt_rounded),
-                      label: const Text('创建备份'),
+                      label: const Text('创建本机备份'),
                     ),
                     OutlinedButton.icon(
                       onPressed: () => _confirmRestoreBackup(context),
@@ -719,6 +748,17 @@ class SettingsPage extends StatelessWidget {
             ],
           ),
           const SectionHeader(title: '关于'),
+          if (Platform.isMacOS || Platform.isAndroid)
+            _SettingsCard(children: [
+              ListTile(
+                leading: const Icon(Icons.system_update_alt),
+                title: const Text('应用更新'),
+                subtitle: const Text('查看版本、检查和下载更新'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => AppUpdatePage(state: state))),
+              ),
+            ]),
           const _SettingsCard(
             children: <Widget>[
               ListTile(

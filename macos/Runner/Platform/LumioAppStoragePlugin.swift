@@ -1,8 +1,10 @@
 import FlutterMacOS
-import Foundation
+import Cocoa
+import UniformTypeIdentifiers
 
 final class LumioAppStoragePlugin: NSObject, FlutterPlugin {
   private let channel: FlutterMethodChannel
+  private let portableChannel: FlutterMethodChannel
   private let queue = DispatchQueue(label: "com.hxg.lumio.storage")
   private let stateDirectory = LumioPaths.applicationSupportDirectory
     .appendingPathComponent("state", isDirectory: true)
@@ -14,11 +16,13 @@ final class LumioAppStoragePlugin: NSObject, FlutterPlugin {
   }
 
   init(registrar: FlutterPluginRegistrar) {
+    portableChannel = FlutterMethodChannel(name: "lumio/portable_backup", binaryMessenger: registrar.messenger)
     channel = FlutterMethodChannel(
       name: "lumio/app_storage",
       binaryMessenger: registrar.messenger
     )
     super.init()
+    try? recoverPortableCommit()
     try? FileManager.default.createDirectory(
       at: stateDirectory,
       withIntermediateDirectories: true
@@ -28,10 +32,82 @@ final class LumioAppStoragePlugin: NSObject, FlutterPlugin {
       withIntermediateDirectories: true
     )
     registrar.addMethodCallDelegate(self, channel: channel)
+    registrar.addMethodCallDelegate(self, channel: portableChannel)
   }
 
   func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
+    case "environment":
+      do {
+        let root = try portableRoot()
+        let support = LumioPaths.applicationSupportDirectory.standardizedFileURL
+        let free = try FileManager.default.attributesOfFileSystem(forPath: root.path)[.systemFreeSize] as? NSNumber
+        result(["temporaryRoot": root.path, "managedRoots": [support.path],
+                "receivedRoot": support.appendingPathComponent("device_transfer/received").path,
+                "availableBytes": free?.int64Value ?? 0])
+      } catch { result(storageError(error)) }
+    case "export", "import":
+      let args = call.arguments as? [String: Any] ?? [:]
+      let exporting = call.method == "export"
+      let panel: NSSavePanel = exporting ? NSSavePanel() : NSOpenPanel()
+      panel.allowedContentTypes = [.zip]
+      if let open = panel as? NSOpenPanel {
+        open.canChooseDirectories = false; open.allowsMultipleSelection = false
+        open.message = "选择 Lumio 导出的数据备份；仅支持同平台恢复。"
+      } else {
+        panel.nameFieldStringValue = args["name"] as? String ?? "Lumio-数据备份.zip"
+        panel.message = "请保存到应用外部的目录。卸载前请确认备份文件已保存。"
+      }
+      guard panel.runModal() == .OK, let selected = panel.url else { result(nil); return }
+      queue.async { [weak self] in
+        guard let self else { return }
+        var temporary: URL?
+        let access = selected.startAccessingSecurityScopedResource()
+        defer { if access { selected.stopAccessingSecurityScopedResource() } }
+        do {
+          if exporting {
+            let root = try self.portableRoot().resolvingSymlinksInPath()
+            guard let path = args["path"] as? String else { throw CocoaError(.fileReadInvalidFileName) }
+            let source = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+            guard source.path.hasPrefix(root.path + "/") else { throw CocoaError(.fileReadNoPermission) }
+            // Never delete a selected existing file before a successful copy.
+            guard !FileManager.default.fileExists(atPath: selected.path) else {
+              throw NSError(domain: "LumioBackup", code: 1, userInfo: [NSLocalizedDescriptionKey: "请使用新的备份文件名，避免覆盖已有备份。"])
+            }
+            try FileManager.default.copyItem(at: source, to: selected)
+            self.finish(result, value: selected.path)
+          } else {
+            let size = try selected.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+            guard size.isRegularFile == true, let bytes = size.fileSize, bytes <= 2 * 1024 * 1024 * 1024 else {
+              throw NSError(domain: "LumioBackup", code: 2, userInfo: [NSLocalizedDescriptionKey: "备份不是普通文件或超过 2 GiB。"])
+            }
+            let root = try self.portableRoot()
+            let free = try FileManager.default.attributesOfFileSystem(forPath: root.path)[.systemFreeSize] as? NSNumber
+            guard (free?.int64Value ?? 0) > Int64(bytes) + 16 * 1024 * 1024 else { throw CocoaError(.fileWriteOutOfSpace) }
+            let directory = root.appendingPathComponent("import-\(UUID().uuidString)", isDirectory: true)
+            temporary = directory
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+            let destination = directory.appendingPathComponent("backup.zip")
+            try FileManager.default.copyItem(at: selected, to: destination)
+            self.finish(result, value: destination.path)
+          }
+        } catch {
+          if let temporary { try? FileManager.default.removeItem(at: temporary) }
+          self.finish(result, value: self.storageError(error))
+        }
+      }
+    case "commit":
+      guard let state = (call.arguments as? [String: Any])?["state"] as? [String: Any] else {
+        result(invalidArguments("备份状态无效。")); return
+      }
+      guard MainActor.assumeIsolated({ LumioMacOSPlugins.subtitleWorkbench?.canRestoreBackup != false }) else {
+        result(invalidArguments("请关闭字幕工作台并等待字幕导出结束，再导入备份。")); return
+      }
+      queue.async { [weak self] in
+        guard let self else { return }
+        do { try self.commitPortableState(state); self.finish(result, value: nil) }
+        catch { self.finish(result, value: self.storageError(error)) }
+      }
     case "transferStorage":
       queue.async { [weak self] in
         do {
@@ -128,6 +204,74 @@ final class LumioAppStoragePlugin: NSObject, FlutterPlugin {
 
   private func partition(from arguments: Any?) -> String? {
     (arguments as? [String: Any])?["partition"] as? String
+  }
+
+  private func portableRoot() throws -> URL {
+    let root = LumioPaths.applicationSupportDirectory.appendingPathComponent("portable_backup", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    return root
+  }
+
+  private var commitRoot: URL {
+    LumioPaths.applicationSupportDirectory.appendingPathComponent("portable_commit", isDirectory: true)
+  }
+
+  private func recoverPortableCommit() throws {
+    let manager = FileManager.default
+    guard manager.fileExists(atPath: commitRoot.path) else { return }
+    if manager.fileExists(atPath: commitRoot.appendingPathComponent("completed").path) {
+      try manager.removeItem(at: commitRoot)
+      return
+    }
+    for name in ["state", "subtitle_projects"] {
+      let target = LumioPaths.applicationSupportDirectory.appendingPathComponent(name)
+      let old = commitRoot.appendingPathComponent("old-\(name)")
+      let absent = commitRoot.appendingPathComponent("absent-\(name)")
+      if manager.fileExists(atPath: old.path) {
+        if manager.fileExists(atPath: target.path) { try manager.removeItem(at: target) }
+        try manager.moveItem(at: old, to: target)
+      } else if manager.fileExists(atPath: absent.path), manager.fileExists(atPath: target.path) {
+        try manager.removeItem(at: target)
+      }
+    }
+    try manager.removeItem(at: commitRoot)
+  }
+
+  private func commitPortableState(_ value: [String: Any]) throws {
+    let manager = FileManager.default
+    try recoverPortableCommit()
+    try manager.createDirectory(at: commitRoot, withIntermediateDirectories: false)
+    do {
+      let libraryKeys: Set<String> = ["schemaVersion", "audioItems", "videoItems", "receivedMedia", "lyricLibrary", "lyricLibraryUndo"]
+      let excluded = libraryKeys.union(["playlists", "subtitleProjects"])
+      let stagedState = commitRoot.appendingPathComponent("new-state")
+      let stagedProjects = commitRoot.appendingPathComponent("new-subtitle_projects")
+      try manager.createDirectory(at: stagedState, withIntermediateDirectories: false)
+      try manager.createDirectory(at: stagedProjects, withIntermediateDirectories: false)
+      try writeJSON(value.filter { libraryKeys.contains($0.key) }, to: stagedState.appendingPathComponent("library.json"))
+      try writeJSON(value.filter { $0.key == "schemaVersion" || $0.key == "playlists" }, to: stagedState.appendingPathComponent("playlists.json"))
+      try writeJSON(value.filter { !excluded.contains($0.key) || $0.key == "schemaVersion" }, to: stagedState.appendingPathComponent("session.json"))
+      let projects = value["subtitleProjects"] as? [[String: Any]] ?? []
+      guard projects.count <= 200 else { throw CocoaError(.fileReadCorruptFile) }
+      var ids: Set<String> = []
+      for project in projects {
+        guard let id = project["id"] as? String, UUID(uuidString: id) != nil, ids.insert(id).inserted,
+              project["schemaVersion"] as? Int == 1 else { throw CocoaError(.fileReadCorruptFile) }
+        try writeJSON(project, to: stagedProjects.appendingPathComponent("\(id).json"))
+      }
+      for name in ["state", "subtitle_projects"] {
+        let target = LumioPaths.applicationSupportDirectory.appendingPathComponent(name)
+        if manager.fileExists(atPath: target.path) {
+          try manager.moveItem(at: target, to: commitRoot.appendingPathComponent("old-\(name)"))
+        } else {
+          try Data().write(to: commitRoot.appendingPathComponent("absent-\(name)"))
+        }
+        try manager.moveItem(at: commitRoot.appendingPathComponent("new-\(name)"), to: target)
+      }
+      // A completed marker distinguishes committed state from an interrupted swap.
+      try Data().write(to: commitRoot.appendingPathComponent("completed"), options: .atomic)
+    } catch { try recoverPortableCommit(); throw error }
+    try? manager.removeItem(at: commitRoot)
   }
 
   private func partitionURL(_ partition: String) -> URL {

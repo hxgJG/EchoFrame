@@ -77,6 +77,8 @@ private data class PendingMediaFileOperation(
 )
 
 class MainActivity : FlutterActivity() {
+    private var portableBackup: LumioPortableBackupPlugin? = null
+    private var appUpdate: LumioAppUpdatePlugin? = null
     private var deviceTransfer: LumioDeviceTransferPlugin? = null
     private data class PendingLyricsExport(
         val result: MethodChannel.Result,
@@ -226,6 +228,8 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        portableBackup = LumioPortableBackupPlugin(this, flutterEngine.dartExecutor.binaryMessenger)
+        appUpdate = LumioAppUpdatePlugin(this, flutterEngine.dartExecutor.binaryMessenger)
         deviceTransfer = LumioDeviceTransferPlugin(this, flutterEngine.dartExecutor.binaryMessenger)
         MMKV.initialize(this)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "lumio/audio_spectrum")
@@ -794,6 +798,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        portableBackup?.close()
+        appUpdate?.close()
         LumioPlaybackService.configureSpectrum(false)
         deviceTransfer?.dispose()
         pendingLyricsExport?.result?.success(mapOf("status" to "cancelled", "message" to "应用已关闭，导出中断。"))
@@ -831,6 +837,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (portableBackup?.onActivityResult(requestCode, resultCode, data) == true) return
         if (deviceTransfer?.onActivityResult(requestCode, resultCode, data) == true) return
         if (requestCode == lyricsExportRequestCode) {
             completeLyricsExport(resultCode, data)
@@ -1241,6 +1248,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun loadAppStatePartition(arguments: Any?, result: MethodChannel.Result) {
+        LumioPortableBackupPlugin.recover(appStateStorage())
         val values = arguments as? Map<*, *> ?: emptyMap<String, Any?>()
         val partition = values["partition"]?.toString().orEmpty()
         val text = if (partition in appStatePartitions) {

@@ -70,6 +70,9 @@ app.*.map.json
 !android/gradle/wrapper/gradle-wrapper.properties
 
 # Signing materials
+**/.lumio-release/
+**/android-signing.properties
+**/manifest-key.json
 *.p12
 *.p7b
 *.cer

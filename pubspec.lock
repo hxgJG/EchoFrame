@@ -81,6 +81,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "3.0.7"
+  cryptography:
+    dependency: "direct main"
+    description:
+      name: cryptography
+      sha256: "696eca57317bb4cac33463299058fcb96c9e651634d0eadf5e7856f5e1b6cbc7"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "2.8.1"
   fake_async:
     dependency: transitive
     description:

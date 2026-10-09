@@ -22,6 +22,7 @@ import '../core/playback/playback_interruption_controller.dart';
 import '../core/playback/weighted_shuffle.dart';
 import '../platform/app_storage/app_storage_repository.dart';
 import '../platform/app_storage/platform_app_storage_repository.dart';
+import '../platform/app_storage/portable_backup_repository.dart';
 import '../platform/desktop_lyrics/desktop_lyrics_controller.dart';
 import '../platform/media_library/lyrics_import.dart';
 import '../platform/media_library/lyrics_export_result.dart';
@@ -45,6 +46,7 @@ import '../platform/device_transfer/transfer_identity.dart';
 
 part 'lyric_library_state.dart';
 part 'device_transfer_state.dart';
+part 'portable_backup_state.dart';
 
 enum AppSection { home, music, playlists, video, settings }
 
@@ -134,6 +136,8 @@ class LumioAppState extends ChangeNotifier {
   Duration _position = const Duration(minutes: 1, seconds: 12);
   bool _isScanningLibrary = false;
   bool _isExportingLyrics = false;
+  bool _portableBackupBusy = false;
+  bool _portableRestorePending = false;
   List<LyricLibraryEntry> _lyricLibrary = [];
   Map<String, Object?>? _lyricLibraryUndo;
   bool _lyricLibraryBusy = false;
@@ -1759,7 +1763,9 @@ class LumioAppState extends ChangeNotifier {
     );
     if (result.status == MediaLibraryScanStatus.completed) {
       result = await _fingerprintLyricScan(result);
+      final restoredPosition = _portableRestorePending ? _position : null;
       _stopPlayback();
+      if (restoredPosition != null) _position = restoredPosition;
     }
     _applyScanResult(
       result,
@@ -2075,6 +2081,7 @@ class LumioAppState extends ChangeNotifier {
   }
 
   bool _applyPersistedState(Map<String, Object?> json) {
+    _portableRestorePending = json['portableRestorePending'] == true;
     _restoreLyricLibrary(json);
     _restoreTransferIndex(json['receivedMedia']);
     _hiddenMediaIds = _asStringList(json['hiddenMediaIds']).toSet();
@@ -2493,11 +2500,23 @@ class LumioAppState extends ChangeNotifier {
     );
   }
 
+  Future<void> prepareForApplicationUpdate() async {
+    if (_portableBackupBusy) throw StateError('备份或恢复尚未结束，请稍后更新。');
+    final storage = _appStorageRepository;
+    final snapshot = _snapshotState();
+    if (storage is PlatformAppStorageRepository) {
+      await storage.saveChecked(snapshot, partitions: _allStoragePartitions);
+    } else {
+      await storage.save(snapshot, partitions: _allStoragePartitions);
+    }
+  }
+
   void _saveState({
     Set<AppStoragePartition> partitions = const <AppStoragePartition>{
       AppStoragePartition.session,
     },
   }) {
+    if (_portableBackupBusy) return;
     _appStorageRepository.save(
       _snapshotState(partitions: partitions),
       partitions: partitions,
@@ -2559,6 +2578,7 @@ class LumioAppState extends ChangeNotifier {
         'abLoopStartMs': _abLoopStart?.inMilliseconds,
         'abLoopEndMs': _abLoopEnd?.inMilliseconds,
         'savedAtMs': DateTime.now().millisecondsSinceEpoch,
+        'portableRestorePending': _portableRestorePending,
       });
     }
     return snapshot;
@@ -2572,9 +2592,32 @@ class LumioAppState extends ChangeNotifier {
     switch (result.status) {
       case MediaLibraryScanStatus.completed:
         final previousPaths = _audioItems.map((item) => item.path).toSet();
+        final restoring = _portableRestorePending;
+        final scannedPaths = [...result.audioItems, ...result.videoItems]
+            .map((e) => e.path)
+            .toSet();
+        final retainedAudio = restoring
+            ? _audioItems
+                .where((e) =>
+                    e.sourceId != 'lumio-received' &&
+                    !scannedPaths.contains(e.path))
+                .toList()
+            : <MediaItem>[];
+        final retainedVideo = restoring
+            ? _videoItems
+                .where((e) =>
+                    e.sourceId != 'lumio-received' &&
+                    !scannedPaths.contains(e.path))
+                .toList()
+            : <MediaItem>[];
+        if (restoring)
+          _remapPortableReferences(
+              [...result.audioItems, ...result.videoItems]);
+        final restoredCurrentId = _currentItem?.id;
         _audioItems = visibleMediaItems(
           [
             ..._mergePersistedMediaMetadata(result.audioItems),
+            ...retainedAudio,
             ..._receivedMedia.values
                 .where((item) => item.kind == MediaKind.audio)
           ],
@@ -2583,6 +2626,7 @@ class LumioAppState extends ChangeNotifier {
         _videoItems = visibleMediaItems(
           [
             ..._mergePersistedMediaMetadata(result.videoItems),
+            ...retainedVideo,
             ..._receivedMedia.values
                 .where((item) => item.kind == MediaKind.video)
           ],
@@ -2598,6 +2642,14 @@ class LumioAppState extends ChangeNotifier {
             : _videoItems.isNotEmpty
                 ? _videoItems.first
                 : null;
+        if (restoring) {
+          _currentItem = restoredCurrentId == null
+              ? _currentItem
+              : _findItem(restoredCurrentId);
+          _playbackNeedsReload = true;
+          _portableRestorePending =
+              retainedAudio.isNotEmpty || retainedVideo.isNotEmpty;
+        }
         _isPlaying = false;
         if (result.hasMedia) {
           _libraryStatusMessage = result.message.isNotEmpty
@@ -2610,6 +2662,9 @@ class LumioAppState extends ChangeNotifier {
         }
         if (matchedLyrics > 0)
           _libraryStatusMessage += ' 已自动关联 $matchedLyrics 首歌词包歌词。';
+        if (_portableRestorePending)
+          _libraryStatusMessage +=
+              ' 仍有 ${retainedAudio.length + retainedVideo.length} 个备份媒体未重新授权或找到，已保留其歌词、歌单和播放记录。';
       case MediaLibraryScanStatus.cancelled:
         _libraryStatusMessage = result.message;
       case MediaLibraryScanStatus.permissionDenied:
