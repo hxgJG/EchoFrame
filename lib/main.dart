@@ -62,9 +62,18 @@ class _LumioAppState extends State<LumioApp> {
   void _openExternalMedia() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+      var alreadyOpen = false;
+      _navigatorKey.currentState?.popUntil((route) {
+        alreadyOpen = route.settings.name == NowPlayingPage.routeName;
+        return alreadyOpen || route.isFirst;
+      });
+      if (alreadyOpen) return;
       _navigatorKey.currentState?.push(MaterialPageRoute<void>(
-        builder: (_) => NowPlayingPage(state: state),
+        settings: const RouteSettings(name: NowPlayingPage.routeName),
+        builder: (_) => AnimatedBuilder(
+          animation: state,
+          builder: (context, _) => NowPlayingPage(state: state),
+        ),
       ));
     });
   }
@@ -338,6 +347,7 @@ class LumioShell extends StatelessWidget {
   void _openNowPlaying(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: NowPlayingPage.routeName),
         builder: (_) => AnimatedBuilder(
           animation: state,
           builder: (context, _) => NowPlayingPage(state: state),

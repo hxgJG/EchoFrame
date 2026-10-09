@@ -124,6 +124,9 @@ class LumioAppState extends ChangeNotifier {
   AppSection _section = AppSection.home;
   MusicSort _musicSort = MusicSort.addedAt;
   MediaItem? _currentItem;
+  String? _lastAudioItemId;
+  Duration _lastAudioPosition = Duration.zero;
+  bool _playbackNeedsReload = false;
   bool _isPlaying = false;
   bool _shuffleEnabled = false;
   RepeatMode _repeatMode = RepeatMode.off;
@@ -699,15 +702,17 @@ class LumioAppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void play(MediaItem item) {
+  void play(MediaItem item, {Duration? startPosition}) {
+    _rememberAudioPlayback();
+    _playbackNeedsReload = false;
     _playbackEpoch++;
     _lyricCalibration = null;
     _interruptionController.cancelPendingResume();
-    final startPosition = _initialPlaybackPosition(item);
+    final initialPosition = startPosition ?? _initialPlaybackPosition(item);
     _videoAspectRatio = null;
     _playbackError = null;
     _currentItem = item.copyWith(playCount: item.playCount + 1);
-    _position = startPosition;
+    _position = initialPosition;
     _isPlaying = true;
     _replaceItem(_currentItem!);
     _startPositionTimer();
@@ -761,6 +766,10 @@ class LumioAppState extends ChangeNotifier {
     if (_currentItem == null) {
       return;
     }
+    if (_playbackNeedsReload) {
+      play(_currentItem!, startPosition: _position);
+      return;
+    }
     if (_playbackError != null && !_isPlaying) {
       play(_currentItem!);
       return;
@@ -802,6 +811,48 @@ class LumioAppState extends ChangeNotifier {
       _stopPositionTimer();
       _playbackRepository.pause();
     }
+    _saveState();
+    notifyListeners();
+  }
+
+  void _rememberAudioPlayback() {
+    if (_currentItem?.kind != MediaKind.audio) return;
+    _lastAudioItemId = _currentItem!.id;
+    _lastAudioPosition = _position;
+  }
+
+  void _restoreAudioPlayback() {
+    final previous =
+        _lastAudioItemId == null ? null : _findItem(_lastAudioItemId!);
+    _currentItem = previous?.kind == MediaKind.audio ? previous : null;
+    final duration = _currentItem?.duration ?? Duration.zero;
+    _position = Duration(
+        milliseconds: _lastAudioPosition.inMilliseconds
+            .clamp(0, duration.inMilliseconds));
+    _isPlaying = false;
+    _playbackNeedsReload = true;
+    _videoTextureId = null;
+    _videoAspectRatio = null;
+    _playbackError = null;
+    _playbackView = _settings.defaultPlaybackView;
+    _abLoopStart = null;
+    _abLoopEnd = null;
+  }
+
+  void leaveVideoPlaybackPage() {
+    if (_disposed ||
+        _currentItem?.kind != MediaKind.video ||
+        _isInPictureInPicture) return;
+    _interruptionController.cancelPendingResume();
+    _updateCurrentVideoResumePosition(forceSave: true);
+    _stopPositionTimer();
+    // Release the video without loading or auto-playing the remembered song.
+    unawaited(_playbackRepository.stop().catchError((Object error) {
+      if (_disposed) return;
+      _libraryStatusMessage = '暂停视频失败：$error';
+      notifyListeners();
+    }));
+    _restoreAudioPlayback();
     _saveState();
     notifyListeners();
   }
@@ -930,7 +981,7 @@ class LumioAppState extends ChangeNotifier {
     }
     _playbackEpoch++;
     _position = item.duration * fraction.clamp(0, 1);
-    _playbackRepository.seek(_position);
+    if (!_playbackNeedsReload) _playbackRepository.seek(_position);
     _updateCurrentVideoResumePosition(forceSave: true);
     _saveState();
     notifyListeners();
@@ -1987,9 +2038,8 @@ class LumioAppState extends ChangeNotifier {
     }
     final opened = <MediaItem>[];
     for (final item in items) {
-      final index =
-          _videoItems.indexWhere((existing) =>
-              existing.id == item.id || existing.path == item.path);
+      final index = _videoItems.indexWhere(
+          (existing) => existing.id == item.id || existing.path == item.path);
       // 再次从 Finder 打开同一文件时保留用户的标题、字幕和播放记录。
       if (index >= 0) {
         opened.add(_videoItems[index]);
@@ -2086,6 +2136,18 @@ class LumioAppState extends ChangeNotifier {
         : _videoItems.isNotEmpty
             ? _videoItems.first
             : null;
+    _lastAudioItemId = json['lastAudioItemId']?.toString();
+    _lastAudioPosition =
+        Duration(milliseconds: _asInt(json['lastAudioPositionMs']));
+    if (_currentItem?.kind == MediaKind.audio) {
+      _rememberAudioPlayback();
+    } else if (_currentItem?.kind == MediaKind.video) {
+      unawaited(_playbackRepository.stop().catchError((Object _) {}));
+      _restoreAudioPlayback();
+    }
+    // Persisted records do not guarantee that the native player has this song
+    // loaded (Android's service can outlive the Flutter page/process).
+    _playbackNeedsReload = true;
     _isPlaying = false;
     _playbackRepository.setSpeed(_playbackSpeed);
     _playbackRepository.setCrossfadeDuration(
@@ -2148,6 +2210,10 @@ class LumioAppState extends ChangeNotifier {
   }
 
   void _handlePlaybackEvent(PlaybackEvent event) {
+    if (_playbackNeedsReload &&
+        (event.type == PlaybackEventType.completed ||
+            event.type == PlaybackEventType.mediaItemChanged ||
+            event.type == PlaybackEventType.nativePlaybackStateChanged)) return;
     switch (event.type) {
       case PlaybackEventType.completed:
         if (event.mediaId == null || event.mediaId == _currentItem?.id) {
@@ -2218,6 +2284,7 @@ class LumioAppState extends ChangeNotifier {
     _playbackEpoch++;
     _lyricCalibration = null;
     _updateCurrentVideoResumePosition(forceSave: true);
+    _rememberAudioPlayback();
     _currentItem = item.copyWith(
       playCount: item.playCount + 1,
       lastPosition: Duration.zero,
@@ -2474,6 +2541,13 @@ class LumioAppState extends ChangeNotifier {
         'hiddenMediaIds': _hiddenMediaIds.toList(growable: false),
         'settings': _settings.toJson(),
         'currentItemId': _currentItem?.id,
+        'lastAudioItemId': _currentItem?.kind == MediaKind.audio
+            ? _currentItem!.id
+            : _lastAudioItemId,
+        'lastAudioPositionMs': (_currentItem?.kind == MediaKind.audio
+                ? _position
+                : _lastAudioPosition)
+            .inMilliseconds,
         'musicSort': _musicSort.name,
         'shuffleEnabled': _shuffleEnabled,
         'repeatMode': _repeatMode.name,

@@ -14,7 +14,8 @@ class MiniPlayer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final item = state.currentItem;
-    if (item == null) {
+    if (item == null ||
+        (state.section == AppSection.home && item.kind == MediaKind.video)) {
       return const SizedBox.shrink();
     }
     final scheme = Theme.of(context).colorScheme;

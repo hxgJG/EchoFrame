@@ -590,6 +590,7 @@ class _PhaseNote extends StatelessWidget {
 void _openNowPlaying(BuildContext context, LumioAppState state) {
   Navigator.of(context).push(
     MaterialPageRoute<void>(
+      settings: const RouteSettings(name: NowPlayingPage.routeName),
       builder: (_) => AnimatedBuilder(
         animation: state,
         builder: (context, _) => NowPlayingPage(state: state),

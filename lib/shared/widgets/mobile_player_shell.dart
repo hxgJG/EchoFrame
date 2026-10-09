@@ -6,6 +6,7 @@ import 'package:flutter/semantics.dart';
 
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
+import '../../core/models/media_item.dart';
 import 'media_tile.dart';
 import 'mini_player.dart';
 
@@ -38,6 +39,11 @@ class _MobilePlayerShellState extends State<MobilePlayerShell>
   double _verticalFraction = 0.85;
   Offset? _dragPosition;
   String? _mediaId;
+
+  bool get _showPlayer =>
+      widget.state.currentItem != null &&
+      !(widget.state.section == AppSection.home &&
+          widget.state.currentItem!.kind == MediaKind.video);
 
   @override
   void initState() {
@@ -148,7 +154,7 @@ class _MobilePlayerShellState extends State<MobilePlayerShell>
                           onExpand: widget.onOpenNowPlaying),
                 ),
               ]),
-              if (_collapsed && widget.state.currentItem != null && size > 0)
+              if (_collapsed && _showPlayer && size > 0)
                 AnimatedPositioned(
                   duration: _dragPosition == null
                       ? const Duration(milliseconds: 180)

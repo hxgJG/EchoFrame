@@ -20,6 +20,8 @@ import 'lyric_authoring_page.dart';
 class NowPlayingPage extends StatefulWidget {
   const NowPlayingPage({super.key, required this.state});
 
+  static const routeName = '/now-playing';
+
   final LumioAppState state;
 
   @override
@@ -61,7 +63,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
               ),
       );
     }
-    return Scaffold(
+    final page = Scaffold(
       appBar: AppBar(
         leading: IconButton(
           tooltip: '收起',
@@ -211,6 +213,12 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                 ),
               ),
             ),
+    );
+    return PopScope<void>(
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) state.leaveVideoPlaybackPage();
+      },
+      child: page,
     );
   }
 }

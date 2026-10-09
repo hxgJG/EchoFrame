@@ -12,6 +12,7 @@ void selectAudioItem(
   if (item.kind == MediaKind.audio && state.currentItem?.id == item.id) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: NowPlayingPage.routeName),
         builder: (_) => AnimatedBuilder(
           animation: state,
           builder: (context, _) => NowPlayingPage(state: state),
