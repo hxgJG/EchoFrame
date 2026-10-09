@@ -34,6 +34,9 @@ class _MobilePlayerShellState extends State<MobilePlayerShell>
   static const _margin = 8.0;
   Timer? _timer;
   bool _collapsed = false;
+  bool _dismissed = false;
+  bool _wasPlaying = false;
+  int _playbackStartRevision = 0;
   bool _right = true;
   bool _foreground = true;
   double _verticalFraction = 0.85;
@@ -41,6 +44,7 @@ class _MobilePlayerShellState extends State<MobilePlayerShell>
   String? _mediaId;
 
   bool get _showPlayer =>
+      !_dismissed &&
       widget.state.currentItem != null &&
       !(widget.state.section == AppSection.home &&
           widget.state.currentItem!.kind == MediaKind.video);
@@ -50,6 +54,8 @@ class _MobilePlayerShellState extends State<MobilePlayerShell>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _mediaId = widget.state.currentItem?.id;
+    _wasPlaying = widget.state.isPlaying;
+    _playbackStartRevision = widget.state.playbackStartRevision;
     widget.state.addListener(_mediaChanged);
     _restartTimer();
   }
@@ -66,16 +72,23 @@ class _MobilePlayerShellState extends State<MobilePlayerShell>
 
   void _mediaChanged() {
     final id = widget.state.currentItem?.id;
-    if (id == _mediaId) return;
+    final startedPlaying = (!_wasPlaying && widget.state.isPlaying) ||
+        _playbackStartRevision != widget.state.playbackStartRevision;
+    _wasPlaying = widget.state.isPlaying;
+    _playbackStartRevision = widget.state.playbackStartRevision;
+    if (id == _mediaId && !startedPlaying) return;
     final wasEmpty = _mediaId == null;
     _mediaId = id;
-    if (wasEmpty || id == null) setState(() => _collapsed = false);
+    setState(() {
+      _dismissed = false;
+      if (wasEmpty || id == null || startedPlaying) _collapsed = false;
+    });
     _restartTimer();
   }
 
   void _restartTimer() {
     _timer?.cancel();
-    if (_collapsed || !_foreground || widget.state.currentItem == null) return;
+    if (_collapsed || !_foreground || !_showPlayer) return;
     _timer = Timer(const Duration(seconds: 10), () {
       if (!mounted) return;
       if (ModalRoute.of(context)?.isCurrent == false) {
@@ -95,6 +108,15 @@ class _MobilePlayerShellState extends State<MobilePlayerShell>
   void _expand() {
     setState(() => _collapsed = false);
     _restartTimer();
+  }
+
+  void _dismiss() {
+    _timer?.cancel();
+    setState(() {
+      _dismissed = true;
+      _collapsed = false;
+      _dragPosition = null;
+    });
   }
 
   @override
@@ -147,10 +169,11 @@ class _MobilePlayerShellState extends State<MobilePlayerShell>
                 AnimatedSize(
                   duration: const Duration(milliseconds: 220),
                   alignment: Alignment.bottomCenter,
-                  child: _collapsed
+                  child: _collapsed || !_showPlayer
                       ? const SizedBox.shrink()
                       : MiniPlayer(
                           state: widget.state,
+                          onClose: _dismiss,
                           onExpand: widget.onOpenNowPlaying),
                 ),
               ]),

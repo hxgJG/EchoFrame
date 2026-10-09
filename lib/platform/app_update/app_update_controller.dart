@@ -35,6 +35,7 @@ class AppUpdateController extends ChangeNotifier {
   String message = '点击检查更新。仅访问公开发布附件，不上传应用数据。';
   UpdateTransport? _transport;
   bool _disposed = false;
+  bool _cancelRequested = false;
   static DateTime? _checkedAt;
   static UpdateManifest? _cachedManifest;
   static int _highestBuild = 0;
@@ -73,7 +74,7 @@ class AppUpdateController extends ChangeNotifier {
       'status': 'running',
       'networkMode': '原有 Dart HttpClient 直连；不能证明系统 VPN 或透明代理已关闭',
       'timingBoundary':
-          'Dart getUrl / 响应头为综合等待；原生 HEAD 是下载后的独立探测，不等同原 GET。没有更改 DNS、IP、代理或下载策略。',
+          'Dart getUrl / 响应头为综合等待；原生 HEAD 是下载后的独立探测，不等同原 GET。支持字节续传，没有更改 DNS、IP 或代理。',
       if (operation == 'download' && package != null)
         'package': {
           'version': manifest!.version,
@@ -147,9 +148,10 @@ class AppUpdateController extends ChangeNotifier {
       _emit();
       try {
         await loadEnvironment();
-        if (_cachedManifest != null)
+        if (_cachedManifest != null) {
           _applyManifest(_cachedManifest!);
-        else {
+          await _refreshRetained();
+        } else {
           phase = UpdatePhase.idle;
           message = '刚刚已检查，请在一分钟后重试。';
         }
@@ -164,6 +166,7 @@ class AppUpdateController extends ChangeNotifier {
     manifest = null;
     package = null;
     downloaded = null;
+    received = 0;
     _checkedAt = DateTime.now();
     _cachedManifest = null;
     _emit();
@@ -185,6 +188,7 @@ class AppUpdateController extends ChangeNotifier {
           raw, utf8.decode(signature), updatePublicKey);
       if (_disposed) return;
       _applyManifest(verified);
+      await _refreshRetained();
       _cachedManifest = verified;
       await _finishDiagnostics('manifestSignatureVerified');
     } on UpdateNotPublished {
@@ -200,6 +204,20 @@ class AppUpdateController extends ChangeNotifier {
       if (identical(_transport, transport)) _transport = null;
       _emit();
     }
+  }
+
+  File _cacheFile(UpdatePackage selected) => File(
+      '${environment!['cacheRoot']}/update-${manifest!.buildNumber}-${selected.sha256}.${selected.platform == 'android' ? 'apk' : 'zip'}');
+
+  Future<void> _refreshRetained() async {
+    if (package == null) return;
+    try {
+      received =
+          await UpdateTransport.retainedBytes(package!, _cacheFile(package!));
+    } on FileSystemException {
+      received = 0;
+    }
+    if (received > 0) message = '发现已保存的下载进度，可继续下载并校验。';
   }
 
   void _applyManifest(UpdateManifest verified) {
@@ -227,32 +245,31 @@ class AppUpdateController extends ChangeNotifier {
   Future<void> download() async {
     if (busy || package == null) return;
     final selected = package!;
+    _cancelRequested = false;
     phase = UpdatePhase.downloading;
-    received = 0;
     downloaded = null;
-    message = '正在下载并校验…';
+    message = '正在下载并校验，网络中断将自动尝试续传…';
     _emit();
     UpdateTransport? transport;
     File? file;
+    var transportCompleted = false;
     try {
       await loadEnvironment();
       await _startDiagnostics('download');
       if (_disposed) return;
+      if (_cancelRequested) throw UpdateCancelled();
       transport = _transport = UpdateTransport(diagnostics: _diagnostics);
+      file = _cacheFile(selected);
+      received = await UpdateTransport.retainedBytes(selected, file);
       if ((environment!['availableBytes'] as num).toInt() <
-          selected.size + 64 * 1024 * 1024)
+          selected.size - received + 64 * 1024 * 1024)
         throw const FileSystemException('存储空间不足，请至少预留安装包大小与 64 MiB。');
-      final suffix = Platform.isAndroid ? 'apk' : 'zip';
-      file = File(
-          '${environment!['cacheRoot']}/update-${manifest!.buildNumber}-${DateTime.now().microsecondsSinceEpoch}.$suffix');
       await transport.download(selected, file, (bytes) {
         received = bytes;
         _emit();
       });
-      if (_disposed) {
-        await file.delete();
-        return;
-      }
+      transportCompleted = true;
+      if (_disposed) return;
       await _channel.invokeMethod<void>('validate', _arguments(file));
       downloaded = file;
       await _probeDiagnostics(selected.url);
@@ -261,10 +278,19 @@ class AppUpdateController extends ChangeNotifier {
       message = '下载和校验完成，诊断已保存。';
     } on UpdateCancelled {
       phase = UpdatePhase.available;
-      message = '已取消下载。';
+      message = '已暂停下载，已下载部分保留，可稍后继续。';
       await _finishDiagnostics('cancelled');
     } on Object catch (e) {
-      if (file != null && await file.exists()) await file.delete();
+      try {
+        if (transportCompleted && file != null && await file.exists())
+          await file.delete();
+        if (file != null && e is! UpdateDownloadBusy) {
+          received = await UpdateTransport.retainedBytes(selected, file);
+        }
+      } on FileSystemException {
+        // A cache read/cleanup failure must not leave the page stuck downloading.
+        received = 0;
+      }
       message = _error(e);
       await _probeDiagnostics(selected.url);
       await _finishDiagnostics('failed', error: e);
@@ -309,6 +335,7 @@ class AppUpdateController extends ChangeNotifier {
 
   static String _error(Object e) {
     if (e is PlatformException) return e.message ?? '系统操作失败，请重试。';
+    if (e is UpdateDownloadBusy) return '上一次下载正在停止，请稍后继续。';
     if (e is UpdateNotPublished) return '此版本附件暂不可用，请稍后重新检查更新。';
     if (e is FormatException) return e.message;
     if (e is TimeoutException) return '网络响应超时，请稍后重试。';
@@ -320,6 +347,7 @@ class AppUpdateController extends ChangeNotifier {
   }
 
   void cancel() {
+    _cancelRequested = true;
     _transport?.cancel();
     if (Platform.isMacOS) {
       unawaited(

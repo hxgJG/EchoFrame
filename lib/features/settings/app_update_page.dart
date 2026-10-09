@@ -125,7 +125,7 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                       alignment: Alignment.centerLeft,
                       child: TextButton(
                           onPressed: controller.cancel,
-                          child: const Text('取消下载'))),
+                          child: const Text('暂停下载'))),
                 ] else if (controller.downloaded != null)
                   Align(
                       alignment: Alignment.centerLeft,
@@ -140,7 +140,15 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                           onPressed:
                               controller.busy ? null : controller.download,
                           icon: const Icon(Icons.download),
-                          label: const Text('下载更新'))),
+                          label:
+                              Text(controller.received > 0 ? '继续下载' : '下载更新'))),
+                if (!controller.busy &&
+                    controller.downloaded == null &&
+                    controller.received > 0) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                      '已保存 ${(controller.received / 1048576).toStringAsFixed(1)} / ${(package.size / 1048576).toStringAsFixed(1)} MiB'),
+                ],
               ],
               const SizedBox(height: 24),
               const Text(
@@ -162,7 +170,8 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                 const Text(
                     'macOS 当前采用临时签名，未经过 Apple 公证。下载后需在 Finder 解压、退出 Lumio、手动替换，再重新启动。请按系统提示处理，不关闭系统保护。'),
               const SizedBox(height: 12),
-              const Text('只在校验通过后提供安装入口。离开本页会取消进行中的下载；网络失败不影响当前应用或本地数据。'),
+              const Text(
+                  '只在校验通过后提供安装入口。离开本页会暂停下载并保留进度，重新检查更新后可继续；未完成缓存保留 7 天（系统清理缓存后需重新下载）。服务器不支持续传时自动重新下载。'),
             ]));
       });
 }

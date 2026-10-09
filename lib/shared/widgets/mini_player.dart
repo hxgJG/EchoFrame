@@ -6,10 +6,12 @@ import '../../core/models/media_item.dart';
 import 'media_tile.dart';
 
 class MiniPlayer extends StatelessWidget {
-  const MiniPlayer({super.key, required this.state, required this.onExpand});
+  const MiniPlayer(
+      {super.key, required this.state, required this.onExpand, this.onClose});
 
   final LumioAppState state;
   final VoidCallback onExpand;
+  final VoidCallback? onClose;
 
   @override
   Widget build(BuildContext context) {
@@ -77,6 +79,12 @@ class MiniPlayer extends StatelessWidget {
                         ],
                       ),
                     ),
+                    if (onClose != null)
+                      IconButton(
+                        tooltip: '关闭播放条（保留播放记录）',
+                        onPressed: onClose,
+                        icon: const Icon(Icons.close_rounded),
+                      ),
                   ]);
                   final repeatLabel = switch (state.repeatMode) {
                     RepeatMode.off => '不循环',

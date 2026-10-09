@@ -79,7 +79,7 @@ final class LumioAppUpdatePlugin: NSObject, FlutterPlugin {
     let resolved = file.resolvingSymlinksInPath()
     guard file.path == resolved.path,
       resolved.deletingLastPathComponent() == root.resolvingSymlinksInPath(),
-      resolved.lastPathComponent.range(of: #"^update-[0-9]+-[0-9]+\.zip$"#, options: .regularExpression) != nil
+      resolved.lastPathComponent.range(of: #"^update-[0-9]+-(?:[0-9]+|[a-f0-9]{64})\.zip$"#, options: .regularExpression) != nil
     else { throw failure("更新包路径不在专用缓存目录。") }
     let values = try resolved.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
     guard values.isRegularFile == true, size.int64Value > 0, size.int64Value <= 1073741824,

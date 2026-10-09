@@ -77,7 +77,7 @@ class LumioAppUpdatePlugin(private val activity: Activity, messenger: BinaryMess
         val path = args["path"] as? String ?: error("更新路径缺失。")
         val file = File(path)
         check(file.canonicalFile == file.absoluteFile && file.parentFile?.canonicalFile == root.canonicalFile &&
-            Regex("update-[0-9]+-[0-9]+\\.apk").matches(file.name) && file.isFile) { "更新缓存路径无效。" }
+            Regex("update-[0-9]+-(?:[0-9]+|[a-f0-9]{64})\\.apk").matches(file.name) && file.isFile) { "更新缓存路径无效。" }
         val size = (args["size"] as? Number)?.toLong() ?: 0
         check(size in 1..1073741824 && file.length() == size) { "更新包长度校验失败。" }
         val hash = MessageDigest.getInstance("SHA-256")

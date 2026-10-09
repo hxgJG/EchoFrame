@@ -558,8 +558,40 @@ class SettingsPage extends StatelessWidget {
                         child: CircularProgressIndicator(strokeWidth: 2.5),
                       )
                     : const Icon(Icons.manage_search_rounded),
-                title: const Text('扫描/导入本机媒体'),
-                subtitle: Text(state.libraryStatusMessage),
+                title: const Text('扫描/导入本机媒体', maxLines: 2),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(state.mediaScanStatusMessage,
+                        maxLines: 2, overflow: TextOverflow.ellipsis),
+                    if (state.hasMediaScanStatus && !state.isScanningLibrary)
+                      Wrap(children: [
+                        TextButton(
+                            onPressed: () => showDialog<void>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                      title: const Text('媒体扫描详情'),
+                                      content: SizedBox(
+                                          width: 560,
+                                          height: 320,
+                                          child: SingleChildScrollView(
+                                              child: SelectableText(state
+                                                  .mediaScanStatusMessage))),
+                                      actions: [
+                                        TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(context),
+                                            child: const Text('关闭'))
+                                      ],
+                                    )),
+                            child: const Text('查看详情')),
+                        TextButton(
+                            onPressed: state.dismissMediaScanStatus,
+                            child: const Text('关闭提示')),
+                      ]),
+                  ],
+                ),
                 trailing: state.isScanningLibrary
                     ? OutlinedButton.icon(
                         onPressed: state.cancelMediaLibraryScan,

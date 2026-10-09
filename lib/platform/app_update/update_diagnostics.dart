@@ -9,7 +9,7 @@ String diagnosticUrl(Uri uri) => Uri(
     ).toString();
 
 Map<String, Object?> diagnosticError(Object error) => {
-      'type': error.runtimeType.toString(),
+      'errorType': error.runtimeType.toString(),
       if (error is SocketException) 'osErrorCode': error.osError?.errorCode,
       if (error is TlsException) 'osErrorCode': error.osError?.errorCode,
       if (error is TimeoutException)

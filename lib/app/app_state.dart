@@ -159,9 +159,11 @@ class LumioAppState extends ChangeNotifier {
   List<MediaSource> _mediaSources = const <MediaSource>[];
   MediaLibraryScanStatus? _lastScanStatus;
   String _libraryStatusMessage = '尚未扫描本机媒体。';
+  String? _mediaScanStatusMessage;
   int? _videoTextureId;
   double? _videoAspectRatio;
   String? _playbackError;
+  int _playbackStartRevision = 0;
   String _backupStatusMessage = '播放列表和设置项会自动离线保存。';
   bool _isInPictureInPicture = false;
   double _playbackSpeed = 1.0;
@@ -250,9 +252,19 @@ class LumioAppState extends ChangeNotifier {
   PlatformCapabilities get platformCapabilities => _platformCapabilities;
   MediaLibraryScanStatus? get lastScanStatus => _lastScanStatus;
   String get libraryStatusMessage => _libraryStatusMessage;
+  String get mediaScanStatusMessage =>
+      _mediaScanStatusMessage ??
+      '当前媒体库：${_audioItems.length} 首音频、${_videoItems.length} 个视频。';
+  bool get hasMediaScanStatus => _mediaScanStatusMessage != null;
+  void dismissMediaScanStatus() {
+    _mediaScanStatusMessage = null;
+    notifyListeners();
+  }
+
   int? get videoTextureId => _videoTextureId;
   double? get videoAspectRatio => _videoAspectRatio;
   String? get playbackError => _playbackError;
+  int get playbackStartRevision => _playbackStartRevision;
   bool get isInPictureInPicture => _isInPictureInPicture;
   int get hiddenMediaCount => _hiddenMediaIds.length;
   String get backupStatusMessage => _backupStatusMessage;
@@ -709,6 +721,7 @@ class LumioAppState extends ChangeNotifier {
   }
 
   void play(MediaItem item, {Duration? startPosition}) {
+    _playbackStartRevision++;
     if (item.sourceId == portableMediaSource) {
       _playbackError = '这是备份中的媒体记录，尚未关联本机文件。请添加或扫描对应音视频后再播放。';
       notifyListeners();
@@ -745,7 +758,6 @@ class LumioAppState extends ChangeNotifier {
         _playbackError = error.toString();
         _isPlaying = false;
         _stopPositionTimer();
-        _libraryStatusMessage = '播放失败：$error';
         _saveState();
         notifyListeners();
       },
@@ -787,6 +799,7 @@ class LumioAppState extends ChangeNotifier {
     }
     _isPlaying = !_isPlaying;
     if (_isPlaying) {
+      _playbackStartRevision++;
       _playbackRepository.setVolumeScale(1.0);
       _startPositionTimer();
       _playbackRepository.resume().catchError(
@@ -804,7 +817,6 @@ class LumioAppState extends ChangeNotifier {
                 _playbackError = retryError.toString();
                 _isPlaying = false;
                 _stopPositionTimer();
-                _libraryStatusMessage = '播放失败：$retryError';
                 _saveState();
                 notifyListeners();
               },
@@ -813,7 +825,6 @@ class LumioAppState extends ChangeNotifier {
             _playbackError = error.toString();
             _isPlaying = false;
             _stopPositionTimer();
-            _libraryStatusMessage = '播放失败：$error';
           }
         },
       );
@@ -1765,6 +1776,7 @@ class LumioAppState extends ChangeNotifier {
     }
     _isScanningLibrary = true;
     _libraryStatusMessage = '正在扫描或导入本机音频和视频...';
+    _mediaScanStatusMessage = _libraryStatusMessage;
     notifyListeners();
 
     var result = await _mediaLibraryRepository.scan(
@@ -1848,6 +1860,7 @@ class LumioAppState extends ChangeNotifier {
     }
     await _mediaLibraryRepository.cancelScan();
     _libraryStatusMessage = '正在取消扫描…';
+    _mediaScanStatusMessage = _libraryStatusMessage;
     notifyListeners();
   }
 
@@ -2146,6 +2159,10 @@ class LumioAppState extends ChangeNotifier {
     _position = Duration(milliseconds: _asInt(json['positionMs']));
     _libraryStatusMessage =
         json['libraryStatusMessage']?.toString() ?? '已恢复本地媒体库。';
+    if (_libraryStatusMessage.startsWith('播放失败')) {
+      _libraryStatusMessage = '已恢复本地媒体库。';
+    }
+    _mediaScanStatusMessage = null;
     _backupStatusMessage =
         json['backupStatusMessage']?.toString() ?? _backupStatusMessage;
     _playbackSpeed = _asDouble(json['playbackSpeed'], 1.0).clamp(0.5, 2.0);
@@ -2247,8 +2264,6 @@ class LumioAppState extends ChangeNotifier {
         _playbackError = event.message.isEmpty ? '媒体播放失败。' : event.message;
         _isPlaying = false;
         _stopPositionTimer();
-        _libraryStatusMessage =
-            event.message.isEmpty ? '播放失败。' : '播放失败：${event.message}';
         _saveState();
         notifyListeners();
       case PlaybackEventType.videoTextureChanged:
@@ -2701,6 +2716,7 @@ class LumioAppState extends ChangeNotifier {
       case MediaLibraryScanStatus.failed:
         _libraryStatusMessage = result.message;
     }
+    _mediaScanStatusMessage = _libraryStatusMessage;
   }
 
   List<MediaItem> _mergePersistedMediaMetadata(List<MediaItem> scannedItems) {
