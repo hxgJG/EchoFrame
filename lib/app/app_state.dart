@@ -23,6 +23,7 @@ import '../core/playback/weighted_shuffle.dart';
 import '../platform/app_storage/app_storage_repository.dart';
 import '../platform/app_storage/platform_app_storage_repository.dart';
 import '../platform/app_storage/portable_backup_repository.dart';
+import '../core/backup/portable_backup_format.dart';
 import '../platform/desktop_lyrics/desktop_lyrics_controller.dart';
 import '../platform/media_library/lyrics_import.dart';
 import '../platform/media_library/lyrics_export_result.dart';
@@ -138,6 +139,7 @@ class LumioAppState extends ChangeNotifier {
   bool _isExportingLyrics = false;
   bool _portableBackupBusy = false;
   bool _portableRestorePending = false;
+  List<Object?> _portableSubtitleProjects = [];
   List<LyricLibraryEntry> _lyricLibrary = [];
   Map<String, Object?>? _lyricLibraryUndo;
   bool _lyricLibraryBusy = false;
@@ -707,6 +709,11 @@ class LumioAppState extends ChangeNotifier {
   }
 
   void play(MediaItem item, {Duration? startPosition}) {
+    if (item.sourceId == portableMediaSource) {
+      _playbackError = '这是备份中的媒体记录，尚未关联本机文件。请添加或扫描对应音视频后再播放。';
+      notifyListeners();
+      return;
+    }
     _rememberAudioPlayback();
     _playbackNeedsReload = false;
     _playbackEpoch++;
@@ -869,7 +876,9 @@ class LumioAppState extends ChangeNotifier {
     }
     final current = _currentItem;
     final pool =
-        current?.kind == MediaKind.video ? _videoItems : _sortedAudioItems();
+        (current?.kind == MediaKind.video ? _videoItems : _sortedAudioItems())
+            .where((e) => e.sourceId != portableMediaSource)
+            .toList();
     if (pool.isEmpty) {
       return;
     }
@@ -884,7 +893,9 @@ class LumioAppState extends ChangeNotifier {
   void previous() {
     final current = _currentItem;
     final pool =
-        current?.kind == MediaKind.video ? _videoItems : _sortedAudioItems();
+        (current?.kind == MediaKind.video ? _videoItems : _sortedAudioItems())
+            .where((e) => e.sourceId != portableMediaSource)
+            .toList();
     if (pool.isEmpty) {
       return;
     }
@@ -895,7 +906,9 @@ class LumioAppState extends ChangeNotifier {
   }
 
   void shuffleAll(MediaKind kind) {
-    final pool = kind == MediaKind.audio ? _audioItems : _videoItems;
+    final pool = (kind == MediaKind.audio ? _audioItems : _videoItems)
+        .where((e) => e.sourceId != portableMediaSource)
+        .toList();
     if (pool.isEmpty) {
       return;
     }
@@ -2043,6 +2056,7 @@ class LumioAppState extends ChangeNotifier {
       return;
     }
     final opened = <MediaItem>[];
+    if (_portableRestorePending) _associatePortableItems(items);
     for (final item in items) {
       final index = _videoItems.indexWhere(
           (existing) => existing.id == item.id || existing.path == item.path);
@@ -2082,6 +2096,8 @@ class LumioAppState extends ChangeNotifier {
 
   bool _applyPersistedState(Map<String, Object?> json) {
     _portableRestorePending = json['portableRestorePending'] == true;
+    _portableSubtitleProjects =
+        List<Object?>.from(json['subtitleProjects'] as List? ?? []);
     _restoreLyricLibrary(json);
     _restoreTransferIndex(json['receivedMedia']);
     _hiddenMediaIds = _asStringList(json['hiddenMediaIds']).toSet();
@@ -2369,7 +2385,9 @@ class LumioAppState extends ChangeNotifier {
       return;
     }
     final pool =
-        current.kind == MediaKind.video ? _videoItems : _sortedAudioItems();
+        (current.kind == MediaKind.video ? _videoItems : _sortedAudioItems())
+            .where((e) => e.sourceId != portableMediaSource)
+            .toList();
     final index = pool.indexWhere((item) => item.id == current.id);
     final isLast = index < 0 || index >= pool.length - 1;
     if (_repeatMode == RepeatMode.off && isLast && !_shuffleEnabled) {
@@ -2579,6 +2597,8 @@ class LumioAppState extends ChangeNotifier {
         'abLoopEndMs': _abLoopEnd?.inMilliseconds,
         'savedAtMs': DateTime.now().millisecondsSinceEpoch,
         'portableRestorePending': _portableRestorePending,
+        if (_portableSubtitleProjects.isNotEmpty)
+          'subtitleProjects': _portableSubtitleProjects,
       });
     }
     return snapshot;
@@ -2591,6 +2611,13 @@ class LumioAppState extends ChangeNotifier {
     _lastScanStatus = result.status;
     switch (result.status) {
       case MediaLibraryScanStatus.completed:
+        if (_portableRestorePending) {
+          _associatePortableItems([
+            ...result.audioItems,
+            ...result.videoItems,
+            ..._receivedMedia.values
+          ]);
+        }
         final previousPaths = _audioItems.map((item) => item.path).toSet();
         final restoring = _portableRestorePending;
         final scannedPaths = [...result.audioItems, ...result.videoItems]
@@ -2714,6 +2741,7 @@ class LumioAppState extends ChangeNotifier {
             ? previous.subtitles
             : item.subtitles,
         subtitleState: previous.subtitleState,
+        backupIdentity: previous.backupIdentity,
       );
     }).toList(growable: false);
   }
@@ -2820,23 +2848,29 @@ class LumioAppState extends ChangeNotifier {
   }
 
   MediaItem? _popNextQueuedItem() {
+    final unresolved = <String>[];
     while (_queueIds.isNotEmpty) {
       final ids = List<String>.from(_queueIds);
       final nextId = ids.removeAt(0);
       _queueIds = ids;
       final item = _findItem(nextId);
-      if (item != null) {
+      if (item?.sourceId == portableMediaSource) unresolved.add(nextId);
+      if (item != null && item.sourceId != portableMediaSource) {
+        _queueIds = [...unresolved, ...ids];
         _saveState();
         notifyListeners();
         return item;
       }
     }
+    _queueIds = unresolved;
     return null;
   }
 
   List<MediaItem> _nativePlaybackQueue(MediaItem current) {
     final pool =
-        current.kind == MediaKind.video ? _videoItems : _sortedAudioItems();
+        (current.kind == MediaKind.video ? _videoItems : _sortedAudioItems())
+            .where((e) => e.sourceId != portableMediaSource)
+            .toList();
     final currentIndex = pool.indexWhere((item) => item.id == current.id);
     final beforeAndCurrent = currentIndex < 0
         ? <MediaItem>[current]
@@ -2846,7 +2880,8 @@ class LumioAppState extends ChangeNotifier {
         : pool.skip(currentIndex + 1).toList(growable: false);
     return <MediaItem>[
       ...beforeAndCurrent,
-      ...queueItems.where((item) => item.kind == current.kind),
+      ...queueItems.where((item) =>
+          item.kind == current.kind && item.sourceId != portableMediaSource),
       ...remaining,
     ];
   }

@@ -37,6 +37,36 @@ final class LumioAppStoragePlugin: NSObject, FlutterPlugin {
 
   func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
+    case "loadWebDavConfiguration", "saveWebDavConfiguration":
+      let args = call.arguments as? [String: Any] ?? [:]
+      queue.async { [weak self] in
+        guard let self else { return }
+        do {
+          let directory = LumioPaths.applicationSupportDirectory.appendingPathComponent("webdav_backup", isDirectory: true)
+          try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+          try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+          let file = directory.appendingPathComponent("configuration.json")
+          if call.method == "saveWebDavConfiguration" {
+            if let config = args["configuration"] as? [String: Any] {
+              let data = try JSONSerialization.data(withJSONObject: config)
+              guard data.count <= 16384 else { throw CocoaError(.fileWriteInvalidFileName) }
+              try data.write(to: file, options: .atomic)
+              try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+            } else if FileManager.default.fileExists(atPath: file.path) {
+              try FileManager.default.removeItem(at: file)
+            }
+            self.finish(result, value: nil)
+          } else {
+            if FileManager.default.fileExists(atPath: file.path) {
+              let bytes = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+              guard bytes <= 16384 else { throw CocoaError(.fileReadCorruptFile) }
+            }
+            self.finish(result, value: FileManager.default.fileExists(atPath: file.path) ? try JSONSerialization.jsonObject(with: Data(contentsOf: file)) : nil)
+          }
+        } catch {
+          self.finish(result, value: self.invalidArguments("无法读写本机云备份配置。"))
+        }
+      }
     case "environment":
       do {
         let root = try portableRoot()
@@ -53,7 +83,7 @@ final class LumioAppStoragePlugin: NSObject, FlutterPlugin {
       panel.allowedContentTypes = [.zip]
       if let open = panel as? NSOpenPanel {
         open.canChooseDirectories = false; open.allowsMultipleSelection = false
-        open.message = "选择 Lumio 导出的数据备份；仅支持同平台恢复。"
+        open.message = "选择 Lumio 数据备份；新版支持跨端恢复，旧版备份仅支持原平台。"
       } else {
         panel.nameFieldStringValue = args["name"] as? String ?? "Lumio-数据备份.zip"
         panel.message = "请保存到应用外部的目录。卸载前请确认备份文件已保存。"

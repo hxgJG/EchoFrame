@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'webdav_backup_page.dart';
 import 'dart:io';
 
 import '../../app/app_state.dart';
@@ -706,7 +707,7 @@ class SettingsPage extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                            '卸载迁移请使用下方外部备份。包含应用数据与 App 内媒体；外部音视频不重复打包，设备安全私钥不导出。'),
+                            '跨端备份仅包含应用数据，不包含音视频和封面原文件。App 内接收的媒体请另行保存，卸载前务必确认。'),
                         const SizedBox(height: 8),
                         Wrap(spacing: 10, runSpacing: 10, children: [
                           FilledButton.icon(
@@ -714,7 +715,7 @@ class SettingsPage extends StatelessWidget {
                                   ? null
                                   : () => exportPortableBackup(context, state),
                               icon: const Icon(Icons.folder_zip_outlined),
-                              label: const Text('导出迁移备份')),
+                              label: const Text('导出数据备份')),
                           OutlinedButton.icon(
                               onPressed: state.portableBackupBusy
                                   ? null
@@ -722,6 +723,20 @@ class SettingsPage extends StatelessWidget {
                               icon: const Icon(Icons.upload_file_outlined),
                               label: const Text('选择备份导入')),
                         ]),
+                        const SizedBox(height: 12),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.cloud_sync_outlined),
+                          title: const Text('云端备份（WebDAV）'),
+                          subtitle: const Text('兼容坚果云 · 手动上传与跨端恢复'),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: state.portableBackupBusy
+                              ? null
+                              : () => Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                      builder: (_) =>
+                                          WebDavBackupPage(state: state))),
+                        ),
                         const SizedBox(height: 12),
                         const Text('以下为本机临时备份，卸载后可能丢失，不能替代迁移备份。'),
                       ]),

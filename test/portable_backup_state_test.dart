@@ -2,6 +2,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumio/app/app_state.dart';
 import 'package:lumio/core/models/media_item.dart';
+import 'package:lumio/core/models/lumio_settings.dart';
+import 'package:lumio/core/backup/portable_backup_format.dart';
 import 'package:lumio/platform/app_storage/app_storage_repository.dart';
 import 'package:lumio/platform/media_library/media_library_repository.dart';
 import 'package:lumio/platform/media_library/platform_media_library_repository.dart';
@@ -70,6 +72,7 @@ void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
   late LumioAppState app;
   late _Library library;
+  late _Storage storage;
   setUp(() async {
     for (final name in [
       'lumio/playback',
@@ -81,8 +84,9 @@ void main() {
           .setMockMethodCallHandler(MethodChannel(name), (_) async => null);
     }
     library = _Library();
+    storage = _Storage();
     app = LumioAppState(
-        appStorageRepository: _Storage(), mediaLibraryRepository: library);
+        appStorageRepository: storage, mediaLibraryRepository: library);
     for (var i = 0; i < 200 && app.lyricLibraryBusy; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -125,6 +129,65 @@ void main() {
     expect(item.lastPosition.inMilliseconds, 12000);
     expect(app.playlists.single.mediaIds, ['new-id']);
     expect(app.currentItem?.id, 'new-id');
+    expect(app.position.inMilliseconds, 12000);
+    expect(app.isPlaying, false);
+  });
+
+  test('先恢复跨端数据、后添加原文件，恢复歌曲信息与全部引用', () async {
+    app.dispose();
+    final old = (storage.data['audioItems'] as List).single as Map;
+    old['durationMs'] = 240000;
+    old['fileSizeBytes'] = 1234;
+    old['backupIdentity'] = {
+      'key': 'a' * 32,
+      'fileName': 'song.mp3',
+      'fingerprint': 'sha256:${'b' * 64}'
+    };
+    storage.data['settings'] = const LumioSettings().toJson();
+    storage.data['receivedMedia'] = {'version': 1, 'items': []};
+    storage.data['lyricLibrary'] = {'version': 1, 'entries': []};
+    storage.data = portableState(storage.data)
+      ..['portableRestorePending'] = true;
+    app = LumioAppState(
+        appStorageRepository: storage, mediaLibraryRepository: library);
+    for (var i = 0; i < 200 && app.lyricLibraryBusy; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    await app.scanMediaLibrary();
+    expect(app.audioItems.single.sourceId, portableMediaSource);
+    app.togglePlaying();
+    expect(app.isPlaying, false);
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('lumio/media_library'), (call) async {
+      if (call.method == 'backupMediaFingerprints')
+        return {'/new-device/renamed.mp3': 'sha256:${'b' * 64}'};
+      return null;
+    });
+    library.result = MediaLibraryScanResult(
+        status: MediaLibraryScanStatus.completed,
+        audioItems: [
+          MediaItem.fromJson({
+            'id': 'android-local-id',
+            'kind': 'audio',
+            'path': '/new-device/renamed.mp3',
+            'title': '原文件曲名',
+            'artist': '原标签',
+            'durationMs': 240005,
+            'fileSizeBytes': 1234,
+          })
+        ]);
+    await app.scanMediaLibrary();
+    final item = app.audioItems.single;
+    expect(item.id, 'android-local-id');
+    expect(item.sourceId, isNot(portableMediaSource));
+    expect(item.title, '自定义名字');
+    expect(item.artist, '自定义歌手');
+    expect(item.lyrics.single.text, '自定义歌词');
+    expect(item.isFavorite, true);
+    expect(item.shuffleWeight, 6);
+    expect(app.playlists.single.mediaIds, [item.id]);
+    expect(app.queueItems.single.id, item.id);
+    expect(app.currentItem?.id, item.id);
     expect(app.position.inMilliseconds, 12000);
     expect(app.isPlaying, false);
   });

@@ -139,14 +139,15 @@ final class LumioMediaLibraryPlugin: NSObject, FlutterPlugin {
       presentLyricsPicker(result: result, plainText: true)
     case "importLyricsPackage":
       presentLyricsPackagePicker(result: result)
-    case "lyricAudioFingerprints":
+    case "lyricAudioFingerprints", "backupMediaFingerprints":
+      let extensions = call.method == "backupMediaFingerprints" ? self.audioExtensions.union(self.videoExtensions) : self.audioExtensions
       let items = (call.arguments as? [String: Any])?["items"] as? [[String: Any]] ?? []
       guard items.count <= 5000 else { result(invalidArguments("单次最多检查 5000 首音频。")); return }
       queue.async {
         var hashes: [String: String] = [:]
         for item in items {
           guard let path = item["path"] as? String,
-                self.audioExtensions.contains(URL(fileURLWithPath: path).pathExtension.lowercased()) else { continue }
+                extensions.contains(URL(fileURLWithPath: path).pathExtension.lowercased()) else { continue }
           let scope = self.bookmarkStore.startAccess(forFilePath: path)
           defer { scope?.stopAccessingSecurityScopedResource() }
           do {

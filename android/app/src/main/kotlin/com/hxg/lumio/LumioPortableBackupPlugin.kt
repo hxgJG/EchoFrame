@@ -23,6 +23,33 @@ class LumioPortableBackupPlugin(private val activity: Activity, messenger: Binar
             try {
                 val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any?>()
                 when (call.method) {
+                    "loadWebDavConfiguration", "saveWebDavConfiguration" -> {
+                        worker.execute {
+                            try {
+                                val file = File(activity.noBackupFilesDir, "webdav-backup.json")
+                                if (call.method == "saveWebDavConfiguration") {
+                                    val config = args["configuration"] as? Map<*, *>
+                                    if (config == null) { android.util.AtomicFile(file).delete() }
+                                    else {
+                                        val json = JSONObject(config).toString()
+                                        check(json.length <= 16384) { "云备份配置过长。" }
+                                        android.util.AtomicFile(file).let { atomic ->
+                                            val output = atomic.startWrite()
+                                            try { output.write(json.toByteArray(Charsets.UTF_8)); atomic.finishWrite(output) }
+                                            catch (e: Exception) { atomic.failWrite(output); throw e }
+                                        }
+                                    }
+                                    activity.runOnUiThread { result.success(null) }
+                                } else {
+                                    check(!file.exists() || file.length() <= 16384) { "云备份配置过长。" }
+                                    val json = if (file.isFile) JSONObject(String(android.util.AtomicFile(file).readFully(), Charsets.UTF_8)).let { value ->
+                                        value.keys().asSequence().associateWith { value.get(it) }
+                                    } else null
+                                    activity.runOnUiThread { result.success(json) }
+                                }
+                            } catch (e: Exception) { activity.runOnUiThread { result.error("webdavConfiguration", "无法读写本机云备份配置。", null) } }
+                        }
+                    }
                     "environment" -> result.success(mapOf(
                         "temporaryRoot" to root.path,
                         "managedRoots" to listOf(activity.filesDir.canonicalPath, activity.cacheDir.canonicalPath, activity.noBackupFilesDir.canonicalPath),
@@ -52,7 +79,7 @@ class LumioPortableBackupPlugin(private val activity: Activity, messenger: Binar
                                 val partitions = mapOf(
                                     "library" to state.filterKeys { it in keys && it != "playlists" && it != "subtitleProjects" || it == "schemaVersion" },
                                     "playlists" to state.filterKeys { it == "playlists" || it == "schemaVersion" },
-                                    "session" to state.filterKeys { it !in keys },
+                                    "session" to state.filterKeys { it !in keys || it == "subtitleProjects" },
                                 ).mapValues { JSONObject(it.value).toString() }
                                 val storage = MMKV.defaultMMKV()
                                 val previous = JSONObject()

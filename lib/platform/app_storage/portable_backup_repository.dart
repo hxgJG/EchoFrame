@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/models/media_item.dart';
+import '../../core/backup/portable_backup_format.dart';
 import '../../core/lyrics/lyric_library.dart';
 import '../../core/models/playlist.dart';
 import '../../core/models/lumio_settings.dart';
@@ -29,6 +30,14 @@ class PortableBackupPreview {
   int get videoCount => (state['videoItems'] as List).length;
   int get playlistCount => (state['playlists'] as List).length;
   int get byteLength => files.fold<int>(0, (n, e) => n + (e['size'] as int));
+  bool get metadataOnly => value['version'] == 2;
+}
+
+class PreparedPortableBackup {
+  PreparedPortableBackup(this.directory, this.file);
+  final Directory directory;
+  final File file;
+  Future<void> dispose() => directory.delete(recursive: true);
 }
 
 class PortableBackupRepository {
@@ -38,7 +47,8 @@ class PortableBackupRepository {
   Future<Map<String, Object?>> environment() async => Map<String, Object?>.from(
       (await channel.invokeMapMethod('environment'))!);
 
-  Future<String?> export(Map<String, Object?> snapshot) async {
+  Future<PreparedPortableBackup> prepare(Map<String, Object?> snapshot,
+      {int version = 2}) async {
     final environment = await this.environment();
     final directory = await Directory(environment['temporaryRoot'] as String)
         .createTemp('export-');
@@ -49,14 +59,37 @@ class PortableBackupRepository {
         'environment': environment,
         'platform': Platform.operatingSystem,
         'path': path,
+        'version': version,
       });
+      return PreparedPortableBackup(directory, File(path));
+    } catch (_) {
+      await directory.delete(recursive: true);
+      rethrow;
+    }
+  }
+
+  Future<String?> export(Map<String, Object?> snapshot,
+      {int version = 2}) async {
+    final prepared = await prepare(snapshot, version: version);
+    try {
       return await channel.invokeMethod<String>('export', {
-        'path': path,
+        'path': prepared.file.path,
         'name': 'Lumio-数据备份-${DateTime.now().millisecondsSinceEpoch}.zip',
       });
     } finally {
-      await directory.delete(recursive: true);
+      await prepared.dispose();
     }
+  }
+
+  Future<PortableBackupPreview> read(File file) async {
+    final env = await environment();
+    final value = await compute(_decodeBackup, {
+      'path': file.path,
+      'platform': Platform.operatingSystem,
+      'availableBytes': env['availableBytes'],
+      'directory': file.parent.path,
+    });
+    return PortableBackupPreview(file.parent, value);
   }
 
   Future<PortableBackupPreview?> select() async {
@@ -90,7 +123,9 @@ Future<String> _digest(File file) async =>
     (await sha256.bind(file.openRead()).first).toString();
 
 Future<void> _encodeBackup(Map<String, Object?> args) async {
-  final state = Map<String, Object?>.from(args['snapshot'] as Map);
+  final version = args['version'] as int? ?? 2;
+  final original = Map<String, Object?>.from(args['snapshot'] as Map);
+  final state = version == 2 ? portableState(original) : original;
   final environment = args['environment'] as Map;
   final roots = (environment['managedRoots'] as List).cast<String>();
   final receivedRoot = environment['receivedRoot'] as String;
@@ -137,15 +172,14 @@ Future<void> _encodeBackup(Map<String, Object?> args) async {
   }
 
   final received = state['receivedMedia'] as Map;
-  for (final raw in received['items'] as List) {
+  for (final raw in version == 1 ? received['items'] as List : []) {
     final item = raw as Map;
     await add(item['path'] as String?, required: true);
     await add(item['artworkPath'] as String?);
   }
-  for (final raw in [
-    ...state['audioItems'] as List,
-    ...state['videoItems'] as List
-  ]) {
+  for (final raw in version == 1
+      ? [...state['audioItems'] as List, ...state['videoItems'] as List]
+      : []) {
     await add((raw as Map)['artworkPath'] as String?);
   }
   // Authorization bookmarks and transfer identities are deliberately excluded.
@@ -155,7 +189,9 @@ Future<void> _encodeBackup(Map<String, Object?> args) async {
   }
   final metadata = utf8.encode(jsonEncode({
     'format': 'lumio-data-backup',
-    'version': 1,
+    'version': version,
+    if (version == 2) 'mediaMode': 'references',
+    if (version == 2) 'attachmentSchemaVersion': 1,
     'platform': args['platform'],
     'createdAtMs': DateTime.now().millisecondsSinceEpoch,
     'state': state,
@@ -253,13 +289,22 @@ Future<Map<String, Object?>> _readBackup(String path, String platform,
     final value =
         Map<String, Object?>.from(jsonDecode(utf8.decode(bytes)) as Map);
     if (value['format'] != 'lumio-data-backup' ||
-        value['version'] != 1 ||
-        value['platform'] != platform) {
+        (value['version'] != 1 && value['version'] != 2) ||
+        (value['version'] == 1 && value['platform'] != platform)) {
       throw const FormatException('不支持此备份版本或平台。请在与导出端相同的平台导入。');
     }
     final state = Map<String, Object?>.from(value['state'] as Map);
     _validateState(state);
     final files = value['files'] as List;
+    if (value['version'] == 2) {
+      if (value['mediaMode'] != 'references' ||
+          value['attachmentSchemaVersion'] != 1 ||
+          files.isNotEmpty ||
+          entries.isNotEmpty) {
+        throw const FormatException('当前版本仅支持不含音视频附件的数据备份。');
+      }
+      validatePortableState(state);
+    }
     if (files.length != entries.length)
       throw const FormatException('备份文件清单不完整。');
     var total = 0;

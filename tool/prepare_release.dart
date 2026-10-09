@@ -188,7 +188,7 @@ Future<void> main(List<String> args) async {
   File('${folder.path}/update-manifest.sig').writeAsStringSync('$signature\n');
   File('${folder.path}/RELEASE_NOTES.md').writeAsStringSync(notes);
   File('${folder.path}/INSTALL.md').writeAsStringSync(
-      'Android：首次正式版与旧测试签名不兼容。先导出应用备份，再由用户决定卸载旧测试版、安装与导入。不要自动卸载。后续版本可覆盖更新。\n\nmacOS：未经过 Apple 公证。解压、退出 Lumio、手动替换应用；按系统提示处理，不关闭系统保护。\n');
+      'Android：正式版后续版本可覆盖更新；旧测试签名与正式签名不兼容，不要自动卸载。确需卸载时，请先导出备份，并另外保存 App 内接收的音视频文件。新版备份只包含应用数据，不包含实际音视频和封面文件。\n\nmacOS：未经过 Apple 公证。解压、退出 Lumio、手动替换应用；保留原有应用数据，按系统提示处理，不关闭系统保护。\n');
   stdout.writeln(
       '已准备并验签：${folder.path}。${preview ? '本地预览附件禁止公开上传。' : '待确认后创建草稿和回读验收；未公开。'}');
 }

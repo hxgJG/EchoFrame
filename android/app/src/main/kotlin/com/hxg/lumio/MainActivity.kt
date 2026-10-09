@@ -256,6 +256,7 @@ class MainActivity : FlutterActivity() {
                     "importLyricsText" -> importLyrics(result, true)
                     "importLyricsPackage" -> importLyrics(result, packageFile = true)
                     "lyricAudioFingerprints" -> lyricAudioFingerprints(call.arguments, result)
+                    "backupMediaFingerprints" -> lyricAudioFingerprints(call.arguments, result, true)
                     "exportLyrics" -> exportLyrics(call.arguments, result)
                     else -> result.notImplemented()
                 }
@@ -898,7 +899,7 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun lyricAudioFingerprints(arguments: Any?, result: MethodChannel.Result) {
+    private fun lyricAudioFingerprints(arguments: Any?, result: MethodChannel.Result, includeVideo: Boolean = false) {
         val items = (arguments as? Map<*, *>)?.get("items") as? List<*> ?: emptyList<Any>()
         if (items.size > 5000) { result.error("invalidArguments", "单次最多检查 5000 首音频。", null); return }
         mediaScanExecutor.execute {
@@ -907,7 +908,7 @@ class MainActivity : FlutterActivity() {
                 val item = raw as? Map<*, *> ?: continue
                 val id = item["id"] as? String ?: continue
                 val path = item["path"] as? String ?: continue
-                val uri = mediaStoreUri(id, "audio") ?: continue
+                val uri = mediaStoreUri(id, if (includeVideo && item["kind"] == "video") "video" else "audio") ?: continue
                 try {
                     fun identity(): Pair<Long, Long>? = contentResolver.query(uri,
                         arrayOf(MediaStore.MediaColumns.SIZE, MediaStore.MediaColumns.DATE_MODIFIED),

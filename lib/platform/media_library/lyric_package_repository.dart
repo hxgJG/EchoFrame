@@ -6,14 +6,19 @@ class LyricPackageRepository {
   static bool get supported => Platform.isMacOS || Platform.isAndroid;
   static const _channel = MethodChannel('lumio/media_library');
 
-  Future<Map<String, String>> fingerprints(List<MediaItem> items) async {
+  Future<Map<String, String>> fingerprints(List<MediaItem> items,
+      {bool includeVideo = false}) async {
     if (!supported || items.isEmpty) return {};
     try {
-      final result = await _channel
-          .invokeMapMethod<String, Object?>('lyricAudioFingerprints', {
+      final result = await _channel.invokeMapMethod<String, Object?>(
+          includeVideo ? 'backupMediaFingerprints' : 'lyricAudioFingerprints', {
         'items': items
-            .map((item) =>
-                {'id': item.id, 'path': item.path, 'size': item.fileSizeBytes})
+            .map((item) => {
+                  'id': item.id,
+                  'kind': item.kind.name,
+                  'path': item.path,
+                  'size': item.fileSizeBytes
+                })
             .toList(),
       });
       return {

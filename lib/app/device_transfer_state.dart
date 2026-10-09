@@ -237,6 +237,10 @@ extension DeviceTransferState on LumioAppState {
       _appliedTransfers.remove(receipt.jobId);
       rethrow;
     }
+    if (_portableRestorePending) {
+      _associatePortableItems([..._audioItems, ..._videoItems]);
+      _saveState(partitions: LumioAppState._allStoragePartitions);
+    }
     _notifyTransferLibrary();
   }
 

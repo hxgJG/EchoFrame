@@ -94,7 +94,7 @@ void main() {
 
   test('流式备份往返保留媒体、歌词、权重、歌单和进度', () async {
     final repository = PortableBackupRepository();
-    expect(await repository.export(snapshot), saved);
+    expect(await repository.export(snapshot, version: 1), saved);
     final preview = (await repository.select())!;
     expect(preview.audioCount, 1);
     expect(preview.playlistCount, 1);
@@ -112,6 +112,43 @@ void main() {
     await preview.directory.delete(recursive: true);
   });
 
+  test('新版备份不打包任何媒体，统一引用可跨平台读取', () async {
+    await PortableBackupRepository().export(snapshot);
+    final archive = ZipDecoder().decodeBytes(await File(saved).readAsBytes());
+    expect(archive.files.map((e) => e.name), ['lumio-backup.json']);
+    final manifest =
+        jsonDecode(utf8.decode(archive.files.single.content as List<int>))
+            as Map;
+    expect(manifest['version'], 2);
+    manifest['platform'] = 'android';
+    final metadata = utf8.encode(jsonEncode(manifest));
+    final encoder = ZipFileEncoder()
+      ..create(saved, level: ZipFileEncoder.STORE);
+    encoder.addArchiveFile(
+        ArchiveFile.noCompress('lumio-backup.json', metadata.length, metadata));
+    encoder.closeSync();
+    final preview = (await PortableBackupRepository().select())!;
+    expect(preview.metadataOnly, true);
+    expect(preview.files, isEmpty);
+    final item = (preview.state['audioItems'] as List).single as Map;
+    expect(item['path'], startsWith('lumio-backup://media/'));
+    expect(jsonEncode(preview.state), isNot(contains(root.path)));
+    expect(
+        (preview.state['playlists'] as List).single['mediaIds'], [item['id']]);
+    expect(preview.state['currentItemId'], item['id']);
+    expect(item['shuffleWeight'], 6);
+    await preview.directory.delete(recursive: true);
+  });
+
+  test('新版数据备份在真实媒体已缺失时仍保留元数据', () async {
+    await File('${root.path}/received/$name').delete();
+    await PortableBackupRepository().export(snapshot);
+    final preview = (await PortableBackupRepository().select())!;
+    expect(preview.files, isEmpty);
+    expect(preview.audioCount, 1);
+    await preview.directory.delete(recursive: true);
+  });
+
   test('外部原文件仅保留索引，不打包', () async {
     (snapshot['audioItems'] as List).add({
       'id': 'external',
@@ -121,7 +158,7 @@ void main() {
       'lyrics': [],
       'accentColor': 0
     });
-    await PortableBackupRepository().export(snapshot);
+    await PortableBackupRepository().export(snapshot, version: 1);
     final preview = (await PortableBackupRepository().select())!;
     expect(preview.audioCount, 2);
     expect(preview.files.length, 1);
@@ -130,13 +167,13 @@ void main() {
 
   test('应用内媒体缺失时不导出不完整备份', () async {
     await File('${root.path}/received/$name').delete();
-    await expectLater(
-        PortableBackupRepository().export(snapshot), throwsFormatException);
+    await expectLater(PortableBackupRepository().export(snapshot, version: 1),
+        throwsFormatException);
     expect(await File(saved).exists(), false);
   });
 
   test('媒体被篡改时拒绝导入并清理暂存', () async {
-    await PortableBackupRepository().export(snapshot);
+    await PortableBackupRepository().export(snapshot, version: 1);
     final archive = ZipDecoder().decodeBytes(await File(saved).readAsBytes());
     final output = ZipFileEncoder()..create(saved, level: ZipFileEncoder.STORE);
     for (final file in archive) {
@@ -182,7 +219,7 @@ void main() {
   test('不允许导出指向应用目录外的接收媒体', () async {
     (((snapshot['receivedMedia'] as Map)['items'] as List).single
         as Map)['path'] = '/external/private.mp3';
-    await expectLater(
-        PortableBackupRepository().export(snapshot), throwsFormatException);
+    await expectLater(PortableBackupRepository().export(snapshot, version: 1),
+        throwsFormatException);
   });
 }

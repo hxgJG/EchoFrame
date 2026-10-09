@@ -11,16 +11,25 @@ extension LyricLibraryState on LumioAppState {
   bool get lyricPackageSupported => LyricPackageRepository.supported;
   Future<MediaLibraryScanResult> _fingerprintLyricScan(
       MediaLibraryScanResult result) async {
+    final crossPlatform = [..._audioItems, ..._videoItems]
+        .any((e) => e.sourceId == portableMediaSource);
     final sizes = _lyricLibrary
         .where((e) => e.active && e.fingerprint.isNotEmpty)
         .map((e) => e.fileSize)
         .toSet();
+    sizes.addAll([..._audioItems, ..._videoItems]
+        .where((e) =>
+            e.sourceId == portableMediaSource &&
+            (e.backupIdentity['fingerprint'] as String? ?? '').isNotEmpty)
+        .map((e) => e.fileSizeBytes));
     _lyricFingerprints = {
       ..._receivedFingerprints,
-      ...await LyricPackageRepository().fingerprints(result.audioItems
-          .where((e) => sizes.contains(e.fileSizeBytes))
-          .take(5000)
-          .toList())
+      ...await LyricPackageRepository().fingerprints(
+          [...result.audioItems, if (crossPlatform) ...result.videoItems]
+              .where((e) => sizes.contains(e.fileSizeBytes))
+              .take(5000)
+              .toList(),
+          includeVideo: crossPlatform)
     };
     return result;
   }

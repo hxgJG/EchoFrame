@@ -127,6 +127,7 @@ class MediaItem {
     this.sourceId,
     this.relativePath,
     this.availability = 'available',
+    this.backupIdentity = const {},
   });
 
   factory MediaItem.fromJson(Map<String, Object?> json) {
@@ -142,6 +143,9 @@ class MediaItem {
     return MediaItem(
       id: json['id']?.toString() ?? '',
       kind: kind,
+      backupIdentity: json['backupIdentity'] is Map
+          ? Map<String, Object?>.from(json['backupIdentity'] as Map)
+          : const {},
       title: json['title']?.toString() ?? '',
       artist: json['artist']?.toString() ?? '未知艺术家',
       album: json['album']?.toString() ?? '未知专辑',
@@ -216,6 +220,7 @@ class MediaItem {
   final String? sourceId;
   final String? relativePath;
   final String availability;
+  final Map<String, Object?> backupIdentity;
 
   String get subtitle {
     if (kind == MediaKind.video) {
@@ -264,6 +269,7 @@ class MediaItem {
     String? sourceId,
     String? relativePath,
     String? availability,
+    Map<String, Object?>? backupIdentity,
   }) {
     return MediaItem(
       id: id ?? this.id,
@@ -302,6 +308,7 @@ class MediaItem {
       sourceId: sourceId ?? this.sourceId,
       relativePath: relativePath ?? this.relativePath,
       availability: availability ?? this.availability,
+      backupIdentity: backupIdentity ?? this.backupIdentity,
     );
   }
 
@@ -336,6 +343,7 @@ class MediaItem {
       'sourceId': sourceId,
       'relativePath': relativePath,
       'availability': availability,
+      if (backupIdentity.isNotEmpty) 'backupIdentity': backupIdentity,
     };
   }
 }
