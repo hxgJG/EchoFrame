@@ -52,6 +52,7 @@ class SettingsPage extends StatelessWidget {
                 controlWidth: 220,
                 control: DropdownButton<String>(
                   isExpanded: true,
+                  style: Theme.of(context).textTheme.bodyLarge,
                   value: LumioThemeCatalog.resolve(state.settings.themeId).id,
                   underline: const SizedBox.shrink(),
                   items: LumioThemeCatalog.themes
@@ -484,18 +485,18 @@ class SettingsPage extends StatelessWidget {
                       icon: const Icon(Icons.remove_rounded),
                       label: const Text('500ms'),
                     ),
-                    TextButton(
-                      onPressed: () => state.adjustLyricOffset(
-                        -state.settings.lyricOffset,
-                      ),
-                      child: const Text('重置'),
-                    ),
                     OutlinedButton.icon(
                       onPressed: () => state.adjustLyricOffset(
                         const Duration(milliseconds: 500),
                       ),
                       icon: const Icon(Icons.add_rounded),
                       label: const Text('500ms'),
+                    ),
+                    TextButton(
+                      onPressed: () => state.adjustLyricOffset(
+                        -state.settings.lyricOffset,
+                      ),
+                      child: const Text('重置'),
                     ),
                   ],
                 ),
@@ -506,13 +507,14 @@ class SettingsPage extends StatelessWidget {
           _SettingsCard(
             children: <Widget>[
               if (capabilities.supportsFolderPicker) ...<Widget>[
-                ListTile(
+                _SettingsChoiceTile(
                   leading: const Icon(Icons.create_new_folder_rounded),
                   title: const Text('媒体来源'),
                   subtitle: Text(state.mediaSources.isEmpty
                       ? '添加音乐或视频所在的文件夹'
                       : '已授权 ${state.mediaSources.length} 个文件夹或文件'),
-                  trailing: FilledButton.icon(
+                  expandControl: false,
+                  control: FilledButton.icon(
                     onPressed: state.isUpdatingMediaSources
                         ? null
                         : state.addMediaSources,
@@ -552,7 +554,7 @@ class SettingsPage extends StatelessWidget {
                     ),
                   ),
               ],
-              ListTile(
+              _SettingsChoiceTile(
                 leading: state.isScanningLibrary
                     ? const SizedBox(
                         width: 24,
@@ -594,7 +596,8 @@ class SettingsPage extends StatelessWidget {
                       ]),
                   ],
                 ),
-                trailing: state.isScanningLibrary
+                expandControl: false,
+                control: state.isScanningLibrary
                     ? OutlinedButton.icon(
                         onPressed: state.cancelMediaLibraryScan,
                         icon: const Icon(Icons.stop_rounded),
@@ -606,7 +609,7 @@ class SettingsPage extends StatelessWidget {
                         label: const Text('开始'),
                       ),
               ),
-              ListTile(
+              _SettingsChoiceTile(
                 leading: const Icon(Icons.restore_from_trash_rounded),
                 title: const Text('恢复已移除媒体'),
                 subtitle: Text(
@@ -614,7 +617,8 @@ class SettingsPage extends StatelessWidget {
                       ? '没有被隐藏的媒体'
                       : '重新显示 ${state.hiddenMediaCount} 个媒体并扫描',
                 ),
-                trailing: TextButton(
+                expandControl: false,
+                control: TextButton(
                   onPressed: state.hiddenMediaCount == 0
                       ? null
                       : state.restoreHiddenMedia,
@@ -972,6 +976,7 @@ class _SettingsChoiceTile extends StatelessWidget {
     required this.subtitle,
     required this.control,
     this.controlWidth,
+    this.expandControl = true,
   });
 
   final Widget leading;
@@ -979,6 +984,7 @@ class _SettingsChoiceTile extends StatelessWidget {
   final Widget subtitle;
   final Widget control;
   final double? controlWidth;
+  final bool expandControl;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -991,7 +997,9 @@ class _SettingsChoiceTile extends StatelessWidget {
                 ListTile(leading: leading, title: title, subtitle: subtitle),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: control,
+                  child: expandControl
+                      ? control
+                      : Align(alignment: Alignment.centerLeft, child: control),
                 ),
               ],
             );
@@ -1023,7 +1031,26 @@ class _SettingsCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
       ),
-      child: Column(children: children),
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: ListTileTheme(
+        data: ListTileTheme.of(context).copyWith(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+          horizontalTitleGap: 12,
+          minLeadingWidth: 24,
+          minVerticalPadding: 12,
+          titleTextStyle: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: scheme.onSurface,
+              ),
+          subtitleTextStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+                height: 1.45,
+              ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
+        ),
+      ),
     );
   }
 }
