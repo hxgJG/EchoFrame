@@ -45,11 +45,13 @@ class SettingsPage extends StatelessWidget {
           const SectionHeader(title: '外观'),
           _SettingsCard(
             children: <Widget>[
-              ListTile(
+              _SettingsChoiceTile(
                 leading: const Icon(Icons.style_outlined),
                 title: const Text('主题方案'),
                 subtitle: const Text('每套方案均包含日间与夜间配色'),
-                trailing: DropdownButton<String>(
+                controlWidth: 220,
+                control: DropdownButton<String>(
+                  isExpanded: true,
                   value: LumioThemeCatalog.resolve(state.settings.themeId).id,
                   underline: const SizedBox.shrink(),
                   items: LumioThemeCatalog.themes
@@ -63,11 +65,11 @@ class SettingsPage extends StatelessWidget {
                   },
                 ),
               ),
-              ListTile(
+              _SettingsChoiceTile(
                 leading: const Icon(Icons.brightness_6_rounded),
                 title: const Text('明暗模式'),
                 subtitle: Text(_themeLabel(state.settings.themeMode)),
-                trailing: SegmentedButton<ThemeMode>(
+                control: SegmentedButton<ThemeMode>(
                   segments: const <ButtonSegment<ThemeMode>>[
                     ButtonSegment(
                       value: ThemeMode.system,
@@ -198,11 +200,11 @@ class SettingsPage extends StatelessWidget {
           const SectionHeader(title: '播放页'),
           _SettingsCard(
             children: <Widget>[
-              ListTile(
+              _SettingsChoiceTile(
                 leading: const Icon(Icons.slideshow_rounded),
                 title: const Text('默认播放页视图'),
                 subtitle: const Text('控制打开播放页时优先显示的内容'),
-                trailing: SegmentedButton<PlaybackView>(
+                control: SegmentedButton<PlaybackView>(
                   segments: const <ButtonSegment<PlaybackView>>[
                     ButtonSegment(
                       value: PlaybackView.artwork,
@@ -234,13 +236,13 @@ class SettingsPage extends StatelessWidget {
                 value: state.settings.subtitleFontSize,
                 onChanged: state.setSubtitleFontSize,
               ),
-              ListTile(
+              _SettingsChoiceTile(
                 leading: const Icon(Icons.format_color_text_rounded),
                 title: const Text('字幕颜色'),
                 subtitle: Text(
                   _subtitleTextColorLabel(state.settings.subtitleTextColor),
                 ),
-                trailing: SegmentedButton<SubtitleTextColor>(
+                control: SegmentedButton<SubtitleTextColor>(
                   segments: const <ButtonSegment<SubtitleTextColor>>[
                     ButtonSegment(
                       value: SubtitleTextColor.white,
@@ -262,13 +264,13 @@ class SettingsPage extends StatelessWidget {
                       state.setSubtitleTextColor(value.first),
                 ),
               ),
-              ListTile(
+              _SettingsChoiceTile(
                 leading: const Icon(Icons.vertical_align_bottom_rounded),
                 title: const Text('字幕位置'),
                 subtitle: Text(
                   _subtitlePositionLabel(state.settings.subtitlePosition),
                 ),
-                trailing: SegmentedButton<SubtitlePosition>(
+                control: SegmentedButton<SubtitlePosition>(
                   segments: const <ButtonSegment<SubtitlePosition>>[
                     ButtonSegment(
                       value: SubtitlePosition.low,
@@ -961,6 +963,49 @@ class SettingsPage extends StatelessWidget {
       await state.restoreLatestBackup();
     }
   }
+}
+
+class _SettingsChoiceTile extends StatelessWidget {
+  const _SettingsChoiceTile({
+    required this.leading,
+    required this.title,
+    required this.subtitle,
+    required this.control,
+    this.controlWidth,
+  });
+
+  final Widget leading;
+  final Widget title;
+  final Widget subtitle;
+  final Widget control;
+  final double? controlWidth;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, constraints) {
+          final textScale = MediaQuery.textScalerOf(context).scale(16) / 16;
+          if (constraints.maxWidth < 600 * textScale) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ListTile(leading: leading, title: title, subtitle: subtitle),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: control,
+                ),
+              ],
+            );
+          }
+          return ListTile(
+            leading: leading,
+            title: title,
+            subtitle: subtitle,
+            trailing: controlWidth == null
+                ? control
+                : SizedBox(width: controlWidth, child: control),
+          );
+        },
+      );
 }
 
 class _SettingsCard extends StatelessWidget {

@@ -16,7 +16,7 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name=".LumioReceivedFileProvider"
             android:authorities="${applicationId}.received"
             android:exported="false"
             android:grantUriPermissions="true">
@@ -24,7 +24,7 @@
                 android:resource="@xml/received_media_paths" />
         </provider>
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name=".LumioUpdateFileProvider"
             android:authorities="${applicationId}.updates"
             android:exported="false"
             android:grantUriPermissions="true">

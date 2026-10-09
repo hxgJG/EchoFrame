@@ -39,6 +39,8 @@ class LumioAppUpdatePlugin(private val activity: Activity, messenger: BinaryMess
                     } else {
                         val args = call.arguments as? Map<*, *> ?: error("更新参数缺失。")
                         val file = validate(args)
+                        val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.updates", file)
+                        validateReadableUri(uri, args)
                         activity.runOnUiThread {
                             try {
                                 if (call.method == "validate") result.success(null)
@@ -46,7 +48,6 @@ class LumioAppUpdatePlugin(private val activity: Activity, messenger: BinaryMess
                                     activity.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${activity.packageName}")))
                                     result.success("permissionRequired")
                                 } else {
-                                    val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.updates", file)
                                     val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
                                         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                     intent.clipData = ClipData.newRawUri("Lumio update", uri)
@@ -58,6 +59,31 @@ class LumioAppUpdatePlugin(private val activity: Activity, messenger: BinaryMess
                     }
                 } catch (e: Exception) { activity.runOnUiThread { result.error("update_validation", e.message ?: "更新校验失败。", null) } }
             }
+        }
+    }
+
+    private fun validateReadableUri(uri: Uri, args: Map<*, *>) {
+        try {
+            val expectedSize = (args["size"] as Number).toLong()
+            activity.contentResolver.openFileDescriptor(uri, "r").use { descriptor ->
+                check(descriptor != null && descriptor.statSize == expectedSize)
+            }
+            val hash = MessageDigest.getInstance("SHA-256")
+            var size = 0L
+            activity.contentResolver.openInputStream(uri).use { input ->
+                checkNotNull(input)
+                val buffer = ByteArray(65536)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    size += count
+                    check(size <= expectedSize)
+                    hash.update(buffer, 0, count)
+                }
+            }
+            check(size == expectedSize && hash.digest().joinToString("") { "%02x".format(it) } == args["sha256"])
+        } catch (_: Exception) {
+            error("无法通过安装共享地址完整读取更新包，已停止打开安装器。请用系统文件管理器安装官方 APK；不要卸载现有应用。")
         }
     }
 
