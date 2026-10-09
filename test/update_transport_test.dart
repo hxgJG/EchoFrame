@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumio/core/updates/update_manifest.dart';
 import 'package:lumio/platform/app_update/update_transport.dart';
+import 'package:lumio/platform/app_update/update_diagnostics.dart';
 
 class _Headers implements HttpHeaders {
   _Headers([this.location]);
@@ -29,6 +30,8 @@ class _Response extends Stream<List<int>> implements HttpClientResponse {
   final int contentLength;
   @override
   final HttpHeaders headers;
+  @override
+  HttpConnectionInfo? get connectionInfo => null;
   @override
   StreamSubscription<List<int>> listen(void Function(List<int>)? onData,
           {Function? onError, void Function()? onDone, bool? cancelOnError}) =>
@@ -110,6 +113,26 @@ void main() {
     expect(await file.readAsBytes(), bytes);
     expect(progress, bytes.length);
     expect(File('${file.path}.part').existsSync(), false);
+  });
+  test('诊断记录原下载器耗时与字节数，不保留重定向签名参数', () async {
+    final diagnostics = UpdateDiagnostics();
+    final asset = Uri.parse(
+        'https://release-assets.githubusercontent.com/a?token=secret');
+    final client = _Client((uri) async => uri.host == 'github.com'
+        ? _Response(const Stream.empty(),
+            statusCode: 302, location: asset.toString())
+        : _Response(Stream.value(bytes), contentLength: bytes.length));
+    await UpdateTransport(clientFactory: () => client, diagnostics: diagnostics)
+        .download(package(), File('${root.path}/update.zip'), (_) {});
+    final snapshot = diagnostics.snapshot();
+    expect(jsonEncode(snapshot), isNot(contains('secret')));
+    final events = (snapshot['events'] as List).cast<Map<String, Object?>>();
+    expect(events.where((e) => e['type'] == 'responseHeaders').length, 2);
+    expect(
+        events.singleWhere((e) => e['type'] == 'bodyComplete')['receivedBytes'],
+        bytes.length);
+    expect(events.last['type'], 'hashVerified');
+    expect(await File('${root.path}/update.zip').readAsBytes(), bytes);
   });
   test('坏哈希 不足长度 超出长度均不留下可安装文件', () async {
     for (final p in [

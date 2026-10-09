@@ -5,6 +5,7 @@ import FlutterMacOS
 final class LumioAppUpdatePlugin: NSObject, FlutterPlugin {
   private let channel: FlutterMethodChannel
   private let queue = DispatchQueue(label: "com.hxg.lumio.app-update")
+  private var networkProbe: LumioUpdateNetworkProbe?
   private let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
     .appendingPathComponent("Lumio/updates", isDirectory: true)
 
@@ -15,9 +16,29 @@ final class LumioAppUpdatePlugin: NSObject, FlutterPlugin {
     registrar.addMethodCallDelegate(self, channel: channel)
   }
   func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-    guard ["environment", "validate", "open"].contains(call.method) else { result(FlutterMethodNotImplemented); return }
+    guard ["environment", "validate", "open", "probeNetwork", "cancelProbe"].contains(call.method) else { result(FlutterMethodNotImplemented); return }
     queue.async {
       do {
+        if call.method == "cancelProbe" {
+          self.networkProbe?.cancel()
+          DispatchQueue.main.async { result(nil) }
+          return
+        }
+        if call.method == "probeNetwork" {
+          guard let args = call.arguments as? [String: Any], let raw = args["url"] as? String,
+            let url = URL(string: raw), LumioUpdateNetworkProbe.trusted(url)
+          else { throw self.failure("诊断地址不在可信 GitHub HTTPS 域名内。") }
+          self.networkProbe?.cancel()
+          let probe = LumioUpdateNetworkProbe()
+          self.networkProbe = probe
+          probe.start(url) { report in
+            self.queue.async {
+              if self.networkProbe === probe { self.networkProbe = nil }
+            }
+            DispatchQueue.main.async { result(report) }
+          }
+          return
+        }
         try FileManager.default.createDirectory(at: self.root, withIntermediateDirectories: true)
         if call.method == "environment" {
           let os = ProcessInfo.processInfo.operatingSystemVersion
@@ -69,5 +90,94 @@ final class LumioAppUpdatePlugin: NSObject, FlutterPlugin {
     while let bytes = try input.read(upToCount: 65536), !bytes.isEmpty { hash.update(data: bytes) }
     guard hash.finalize().map({ String(format: "%02x", $0) }).joined() == expected else { throw failure("更新包哈希校验失败。") }
     return resolved
+  }
+}
+
+// Independent HEAD measurements, never a replacement for the actual Dart GET.
+private final class LumioUpdateNetworkProbe: NSObject, URLSessionTaskDelegate {
+  private var session: URLSession?
+  private var completion: (([String: Any]) -> Void)?
+  private var transactions: [[String: Any]] = []
+  private var redirects = 0
+
+  static func trusted(_ url: URL) -> Bool {
+    url.scheme == "https" && url.user == nil && url.password == nil &&
+      (url.port == nil || url.port == 443) && url.fragment == nil &&
+      ["github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com"].contains(url.host ?? "")
+  }
+
+  private func safeURL(_ url: URL?) -> String {
+    guard let url = url, var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return "" }
+    parts.query = nil
+    parts.fragment = nil
+    parts.user = nil
+    parts.password = nil
+    return parts.string ?? ""
+  }
+
+  private func milliseconds(_ start: Date?, _ end: Date?) -> Any {
+    guard let start = start, let end = end else { return NSNull() }
+    return max(0, end.timeIntervalSince(start) * 1000)
+  }
+
+  func start(_ url: URL, completion: @escaping ([String: Any]) -> Void) {
+    self.completion = completion
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.httpCookieStorage = nil
+    configuration.urlCredentialStorage = nil
+    configuration.urlCache = nil
+    configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+    configuration.timeoutIntervalForRequest = 15
+    configuration.timeoutIntervalForResource = 45
+    let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+    self.session = session
+    var request = URLRequest(url: url)
+    request.httpMethod = "HEAD"
+    request.setValue("Lumio-Updates/1", forHTTPHeaderField: "User-Agent")
+    session.dataTask(with: request).resume()
+  }
+
+  func cancel() { session?.invalidateAndCancel() }
+
+  func urlSession(_ session: URLSession, task: URLSessionTask,
+    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+    completionHandler: @escaping (URLRequest?) -> Void) {
+    redirects += 1
+    guard redirects <= 5, let url = request.url, Self.trusted(url) else {
+      completionHandler(nil)
+      return
+    }
+    var head = request
+    head.httpMethod = "HEAD"
+    completionHandler(head)
+  }
+
+  func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+    transactions = metrics.transactionMetrics.map { metric in
+      ["url": safeURL(metric.request.url),
+       "status": (metric.response as? HTTPURLResponse)?.statusCode ?? 0,
+       "remoteAddress": metric.remoteAddress ?? "",
+       "httpProtocol": metric.networkProtocolName ?? "",
+       "isProxyConnection": metric.isProxyConnection,
+       "isReusedConnection": metric.isReusedConnection,
+       "dnsMs": milliseconds(metric.domainLookupStartDate, metric.domainLookupEndDate),
+       "tcpMs": milliseconds(metric.connectStartDate, metric.secureConnectionStartDate ?? metric.connectEndDate),
+       "tlsMs": milliseconds(metric.secureConnectionStartDate, metric.secureConnectionEndDate),
+       "requestToFirstByteMs": milliseconds(metric.requestStartDate, metric.responseStartDate),
+       "headersWaitMs": milliseconds(metric.requestEndDate, metric.responseStartDate)]
+    }
+  }
+
+  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    var report: [String: Any] = [
+      "source": "独立 URLSession HEAD，发生于原 Dart 下载之后；DNS 缓存、系统代理和 HTTP 协议可能不同。null 表示阶段未观测到，不表示耗时为零。",
+      "transactions": transactions,
+      "status": (task.response as? HTTPURLResponse)?.statusCode ?? 0]
+    if let error = error as NSError? { report["error"] = ["domain": error.domain, "code": error.code] }
+    let callback = completion
+    completion = nil
+    callback?(report)
+    session.finishTasksAndInvalidate()
+    self.session = nil
   }
 }

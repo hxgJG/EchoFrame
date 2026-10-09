@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../app/app_state.dart';
 import '../../platform/app_update/app_update_controller.dart';
 
@@ -45,6 +46,36 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
       if (accepted != true || !mounted) return;
     }
     await controller.open(widget.state.prepareForApplicationUpdate);
+  }
+
+  Future<void> _showDiagnostics() async {
+    try {
+      final text = await controller.readDiagnosticReport();
+      if (!mounted) return;
+      await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+                title: const Text('网络诊断记录'),
+                content: SizedBox(
+                    width: 720,
+                    height: 460,
+                    child: SingleChildScrollView(child: SelectableText(text))),
+                actions: [
+                  TextButton(
+                      onPressed: () async {
+                        await Clipboard.setData(ClipboardData(text: text));
+                      },
+                      child: const Text('复制记录')),
+                  TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('关闭')),
+                ],
+              ));
+    } on Object {
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('无法读取诊断记录，请检查磁盘空间。')));
+    }
   }
 
   @override
@@ -112,6 +143,21 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                           label: const Text('下载更新'))),
               ],
               const SizedBox(height: 24),
+              const Text(
+                  '手动检查和下载会记录本机网络诊断，每 5 秒保存一次；不上传日志，不记录临时签名参数或应用数据。无 VPN 测试前请自行关闭 VPN／代理。'),
+              if (controller.diagnosticReport != null) ...[
+                const SizedBox(height: 8),
+                SelectableText('日志位置：${controller.diagnosticReport!.path}'),
+                if (controller.diagnosticWriteError != null)
+                  Text(controller.diagnosticWriteError!),
+                Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                        onPressed: _showDiagnostics,
+                        icon: const Icon(Icons.description_outlined),
+                        label: const Text('查看／复制诊断记录'))),
+              ],
+              const SizedBox(height: 12),
               if (Platform.isMacOS)
                 const Text(
                     'macOS 当前采用临时签名，未经过 Apple 公证。下载后需在 Finder 解压、退出 Lumio、手动替换，再重新启动。请按系统提示处理，不关闭系统保护。'),

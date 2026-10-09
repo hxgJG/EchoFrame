@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../core/updates/release_config.dart';
 import '../../core/updates/update_manifest.dart';
 import 'update_transport.dart';
+import 'update_diagnostics.dart';
 
 enum UpdatePhase {
   idle,
@@ -25,6 +26,12 @@ class AppUpdateController extends ChangeNotifier {
   UpdatePackage? package;
   File? downloaded;
   int received = 0;
+  File? diagnosticReport;
+  String? diagnosticWriteError;
+  UpdateDiagnostics? _diagnostics;
+  Timer? _diagnosticTimer;
+  Future<void> _diagnosticWrites = Future<void>.value();
+  Map<String, Object?> _report = {};
   String message = '点击检查更新。仅访问公开发布附件，不上传应用数据。';
   UpdateTransport? _transport;
   bool _disposed = false;
@@ -44,6 +51,92 @@ class AppUpdateController extends ChangeNotifier {
     environment =
         (await _channel.invokeMapMethod<String, dynamic>('environment'))!;
     _emit();
+  }
+
+  Future<void> _startDiagnostics(String operation) async {
+    await _saveDiagnostics();
+    _diagnosticTimer?.cancel();
+    final root = Directory('${environment!['cacheRoot']}/diagnostics');
+    await root.create(recursive: true);
+    diagnosticReport = File(
+        '${root.path}/network-${DateTime.now().microsecondsSinceEpoch}.json');
+    diagnosticWriteError = null;
+    _diagnostics = UpdateDiagnostics();
+    _report = {
+      'schemaVersion': 1,
+      'operation': operation,
+      'startedAt': DateTime.now().toUtc().toIso8601String(),
+      'appVersion': environment!['version'],
+      'appBuild': environment!['buildNumber'],
+      'platform': environment!['platform'],
+      'architecture': environment!['architecture'],
+      'status': 'running',
+      'networkMode': '原有 Dart HttpClient 直连；不能证明系统 VPN 或透明代理已关闭',
+      'timingBoundary':
+          'Dart getUrl / 响应头为综合等待；原生 HEAD 是下载后的独立探测，不等同原 GET。没有更改 DNS、IP、代理或下载策略。',
+      if (operation == 'download' && package != null)
+        'package': {
+          'version': manifest!.version,
+          'buildNumber': manifest!.buildNumber,
+          'fileName': package!.fileName,
+          'expectedBytes': package!.size,
+          'sha256': package!.sha256,
+          'url': diagnosticUrl(package!.url),
+        },
+    };
+    await _saveDiagnostics();
+    if (_disposed) return;
+    _diagnosticTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      unawaited(_saveDiagnostics());
+    });
+    _emit();
+  }
+
+  Future<void> _saveDiagnostics() {
+    final file = diagnosticReport;
+    final diagnostics = _diagnostics;
+    if (file == null || diagnostics == null) return _diagnosticWrites;
+    final contents = const JsonEncoder.withIndent('  ').convert({
+      ..._report,
+      'savedAt': DateTime.now().toUtc().toIso8601String(),
+      'receivedBytes': received,
+      'transport': diagnostics.snapshot(),
+    });
+    return _diagnosticWrites = _diagnosticWrites.then((_) async {
+      try {
+        final temporary = File('${file.path}.tmp');
+        await temporary.writeAsString(contents, flush: true);
+        await temporary.rename(file.path);
+      } on Object {
+        diagnosticWriteError = '诊断日志保存失败，请检查磁盘空间。';
+        _emit();
+      }
+    });
+  }
+
+  Future<void> _finishDiagnostics(String status, {Object? error}) async {
+    _diagnosticTimer?.cancel();
+    _report['status'] = status;
+    _report['finishedAt'] = DateTime.now().toUtc().toIso8601String();
+    if (error != null) _report['error'] = diagnosticError(error);
+    await _saveDiagnostics();
+  }
+
+  Future<void> _probeDiagnostics(Uri uri) async {
+    if (!Platform.isMacOS || _disposed) return;
+    try {
+      _report['independentHeadProbe'] = await _channel
+          .invokeMethod<Object>('probeNetwork', {'url': uri.toString()});
+      await _saveDiagnostics();
+    } on Object catch (error) {
+      _report['probeError'] = diagnosticError(error);
+    }
+  }
+
+  Future<String> readDiagnosticReport() async {
+    await _saveDiagnostics();
+    if (diagnosticReport == null) return '尚无诊断记录，请手动检查更新或下载。';
+    return diagnosticReport!.readAsString();
   }
 
   Future<void> check() async {
@@ -74,9 +167,12 @@ class AppUpdateController extends ChangeNotifier {
     _checkedAt = DateTime.now();
     _cachedManifest = null;
     _emit();
-    final transport = _transport = UpdateTransport();
+    UpdateTransport? transport;
     try {
       await loadEnvironment();
+      await _startDiagnostics('check');
+      if (_disposed) return;
+      transport = _transport = UpdateTransport(diagnostics: _diagnostics);
       final raw = await transport.smallFile(
           Uri.parse(
               'https://github.com/$releaseRepository/releases/latest/download/update-manifest.json'),
@@ -90,14 +186,17 @@ class AppUpdateController extends ChangeNotifier {
       if (_disposed) return;
       _applyManifest(verified);
       _cachedManifest = verified;
+      await _finishDiagnostics('manifestSignatureVerified');
     } on UpdateNotPublished {
       phase = UpdatePhase.idle;
       message = '尚无公开的更新版本，或发布附件暂不可用。当前应用可继续使用。';
+      await _finishDiagnostics('notPublished');
     } on Object catch (e) {
       phase = UpdatePhase.failed;
       message = _error(e);
+      await _finishDiagnostics('failed', error: e);
     } finally {
-      transport.cancel();
+      transport?.cancel();
       if (identical(_transport, transport)) _transport = null;
       _emit();
     }
@@ -133,10 +232,13 @@ class AppUpdateController extends ChangeNotifier {
     downloaded = null;
     message = '正在下载并校验…';
     _emit();
-    final transport = _transport = UpdateTransport();
+    UpdateTransport? transport;
     File? file;
     try {
       await loadEnvironment();
+      await _startDiagnostics('download');
+      if (_disposed) return;
+      transport = _transport = UpdateTransport(diagnostics: _diagnostics);
       if ((environment!['availableBytes'] as num).toInt() <
           selected.size + 64 * 1024 * 1024)
         throw const FileSystemException('存储空间不足，请至少预留安装包大小与 64 MiB。');
@@ -153,17 +255,22 @@ class AppUpdateController extends ChangeNotifier {
       }
       await _channel.invokeMethod<void>('validate', _arguments(file));
       downloaded = file;
+      await _probeDiagnostics(selected.url);
+      await _finishDiagnostics('downloadAndNativeValidationPassed');
       phase = UpdatePhase.ready;
-      message = '下载和校验完成。';
+      message = '下载和校验完成，诊断已保存。';
     } on UpdateCancelled {
       phase = UpdatePhase.available;
       message = '已取消下载。';
+      await _finishDiagnostics('cancelled');
     } on Object catch (e) {
       if (file != null && await file.exists()) await file.delete();
-      phase = UpdatePhase.failed;
       message = _error(e);
+      await _probeDiagnostics(selected.url);
+      await _finishDiagnostics('failed', error: e);
+      phase = UpdatePhase.failed;
     } finally {
-      transport.cancel();
+      transport?.cancel();
       if (identical(_transport, transport)) _transport = null;
       _emit();
     }
@@ -212,11 +319,21 @@ class AppUpdateController extends ChangeNotifier {
     return e.toString();
   }
 
-  void cancel() => _transport?.cancel();
+  void cancel() {
+    _transport?.cancel();
+    if (Platform.isMacOS) {
+      unawaited(
+          _channel.invokeMethod<void>('cancelProbe').catchError((Object _) {}));
+    }
+  }
+
   @override
   void dispose() {
     _disposed = true;
     cancel();
+    _diagnosticTimer?.cancel();
+    if (_report['status'] == 'running') _report['status'] = 'pageClosed';
+    unawaited(_saveDiagnostics());
     super.dispose();
   }
 }
