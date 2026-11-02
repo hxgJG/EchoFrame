@@ -12,6 +12,7 @@ import '../../core/models/media_item.dart';
 import '../../core/playback/playback_page_gesture.dart';
 import '../../platform/media_library/lyrics_import.dart';
 import '../../shared/widgets/media_tile.dart';
+import '../../shared/widgets/playback_mode_button.dart';
 import '../../shared/widgets/lyrics_export_action.dart';
 import '../../shared/widgets/lyric_spectrum_background.dart';
 import 'lyric_calibration_dialog.dart';
@@ -1267,16 +1268,7 @@ class _PrimaryControls extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: <Widget>[
-        IconButton(
-          tooltip: '循环模式',
-          onPressed: state.cycleRepeatMode,
-          icon: Icon(
-            state.repeatMode == RepeatMode.one
-                ? Icons.repeat_one_rounded
-                : Icons.repeat_rounded,
-            color: state.repeatMode == RepeatMode.off ? null : mediaColor,
-          ),
-        ),
+        PlaybackModeButton(state: state, color: mediaColor),
         IconButton(
           tooltip: '上一首',
           onPressed: state.previous,
@@ -1305,20 +1297,6 @@ class _PrimaryControls extends StatelessWidget {
           tooltip: '下一首',
           onPressed: state.next,
           icon: const Icon(Icons.skip_next_rounded, size: 34),
-        ),
-        IconButton(
-          tooltip: state.shuffleEnabled ? '关闭随机播放' : '开启随机播放',
-          isSelected: state.shuffleEnabled,
-          style: IconButton.styleFrom(
-            backgroundColor:
-                state.shuffleEnabled ? scheme.primaryContainer : null,
-            foregroundColor: state.shuffleEnabled ? mediaColor : null,
-          ),
-          onPressed: state.toggleShuffle,
-          icon: Icon(
-            Icons.shuffle_rounded,
-            color: state.shuffleEnabled ? mediaColor : null,
-          ),
         ),
       ],
     );

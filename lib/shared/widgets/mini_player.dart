@@ -4,6 +4,7 @@ import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../core/models/media_item.dart';
 import 'media_tile.dart';
+import 'playback_mode_button.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer(
@@ -86,41 +87,10 @@ class MiniPlayer extends StatelessWidget {
                         icon: const Icon(Icons.close_rounded),
                       ),
                   ]);
-                  final repeatLabel = switch (state.repeatMode) {
-                    RepeatMode.off => '不循环',
-                    RepeatMode.all => '列表循环',
-                    RepeatMode.one => '单曲循环',
-                  };
                   final controls = Row(
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      IconButton(
-                        tooltip: state.shuffleEnabled ? '关闭随机播放' : '开启随机播放',
-                        isSelected: state.shuffleEnabled,
-                        onPressed: state.toggleShuffle,
-                        style: IconButton.styleFrom(
-                          backgroundColor: state.shuffleEnabled
-                              ? scheme.primaryContainer
-                              : null,
-                          foregroundColor:
-                              state.shuffleEnabled ? mediaColor : null,
-                        ),
-                        icon: const Icon(Icons.shuffle_rounded),
-                      ),
-                      IconButton(
-                        tooltip: '$repeatLabel（点击切换）',
-                        onPressed: state.cycleRepeatMode,
-                        icon: Icon(
-                          switch (state.repeatMode) {
-                            RepeatMode.off => Icons.arrow_forward_rounded,
-                            RepeatMode.all => Icons.repeat_rounded,
-                            RepeatMode.one => Icons.repeat_one_rounded,
-                          },
-                          color: state.repeatMode == RepeatMode.off
-                              ? scheme.onSurfaceVariant
-                              : mediaColor,
-                        ),
-                      ),
+                      PlaybackModeButton(state: state, color: mediaColor),
                       IconButton(
                         tooltip: '上一首',
                         onPressed: state.previous,

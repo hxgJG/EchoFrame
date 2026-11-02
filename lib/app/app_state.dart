@@ -53,6 +53,8 @@ enum AppSection { home, music, playlists, video, settings }
 
 enum MusicSort { title, addedAt, duration, playCount, fileSize }
 
+enum PlaybackMode { sequential, repeatAll, repeatOne, shuffle }
+
 class LumioAppState extends ChangeNotifier {
   LumioAppState({
     MediaLibraryRepository mediaLibraryRepository =
@@ -194,6 +196,13 @@ class LumioAppState extends ChangeNotifier {
   bool get isPlaying => _isPlaying;
   bool get shuffleEnabled => _shuffleEnabled;
   RepeatMode get repeatMode => _repeatMode;
+  PlaybackMode get playbackMode => _shuffleEnabled
+      ? PlaybackMode.shuffle
+      : switch (_repeatMode) {
+          RepeatMode.off => PlaybackMode.sequential,
+          RepeatMode.all => PlaybackMode.repeatAll,
+          RepeatMode.one => PlaybackMode.repeatOne,
+        };
   PlaybackView get playbackView => _playbackView;
   Duration get position => _position;
   bool get isScanningLibrary => _isScanningLibrary;
@@ -898,7 +907,9 @@ class LumioAppState extends ChangeNotifier {
         current == null ? -1 : pool.indexWhere((item) => item.id == current.id);
     final nextIndex = _shuffleEnabled
         ? _randomOtherIndex(pool)
-        : (index + 1).clamp(0, pool.length - 1);
+        : _repeatMode == RepeatMode.all
+            ? (index + 1) % pool.length
+            : (index + 1).clamp(0, pool.length - 1);
     play(pool[nextIndex]);
   }
 
@@ -924,8 +935,7 @@ class LumioAppState extends ChangeNotifier {
     if (pool.isEmpty) {
       return;
     }
-    _shuffleEnabled = true;
-    if (_repeatMode == RepeatMode.one) _repeatMode = RepeatMode.off;
+    setPlaybackMode(PlaybackMode.shuffle);
     play(pool[_randomOtherIndex(pool)]);
   }
 
@@ -957,6 +967,24 @@ class LumioAppState extends ChangeNotifier {
       });
     }
     _playbackRepository.setShuffleEnabled(_shuffleEnabled);
+    _saveState();
+    notifyListeners();
+  }
+
+  void setPlaybackMode(PlaybackMode mode) {
+    _shuffleEnabled = mode == PlaybackMode.shuffle;
+    _repeatMode = switch (mode) {
+      PlaybackMode.sequential => RepeatMode.off,
+      PlaybackMode.repeatOne => RepeatMode.one,
+      PlaybackMode.repeatAll || PlaybackMode.shuffle => RepeatMode.all,
+    };
+    if (_shuffleEnabled) {
+      _playbackRepository.setShuffleWeights({
+        for (final song in _audioItems) song.id: song.shuffleWeight,
+      });
+    }
+    _playbackRepository.setShuffleEnabled(_shuffleEnabled);
+    _playbackRepository.setRepeatMode(_repeatMode);
     _saveState();
     notifyListeners();
   }
