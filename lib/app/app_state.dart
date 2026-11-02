@@ -85,7 +85,7 @@ class LumioAppState extends ChangeNotifier {
       onTogglePlaying: togglePlaying,
       onNext: next,
     );
-    _restorePersistedState();
+    startupReady = _restorePersistedState();
     if (Platform.isMacOS || Platform.isAndroid) {
       // Generate only the local identity at startup; never start sharing here.
       unawaited(TransferIdentity.load()
@@ -94,6 +94,7 @@ class LumioAppState extends ChangeNotifier {
   }
 
   final MediaLibraryRepository _mediaLibraryRepository;
+  late final Future<void> startupReady;
   final DesktopLyricsController desktopLyrics = DesktopLyricsController();
   final AudioSpectrumController audioSpectrum = AudioSpectrumController();
   final AppStorageRepository _appStorageRepository;
@@ -1465,6 +1466,13 @@ class LumioAppState extends ChangeNotifier {
     _settings = desktop
         ? _settings.copyWith(desktopSpectrumEnabled: enabled)
         : _settings.copyWith(lyricSpectrumEnabled: enabled);
+    _saveState();
+    notifyListeners();
+  }
+
+  void setSpectrumColorStyle(SpectrumColorStyle style) {
+    if (_settings.spectrumColorStyle == style) return;
+    _settings = _settings.copyWith(spectrumColorStyle: style);
     _saveState();
     notifyListeners();
   }

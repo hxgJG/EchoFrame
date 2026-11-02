@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
+import 'package:cryptography/cryptography.dart';
 import '../lib/core/updates/release_config.dart';
 import '../lib/core/updates/update_manifest.dart';
 import 'prepare_release.dart' show run;
@@ -31,6 +32,14 @@ Future<void> main(List<String> args) async {
     if (await file.length() != p.size ||
         (await sha256.bind(file.openRead()).first).toString() != p.sha256)
       throw StateError('本地安装包不匹配。');
+    if (p.platform == 'macos' &&
+        (p.sparkleSignature == null ||
+            !await Ed25519().verify(await file.readAsBytes(),
+                signature: Signature(base64Decode(p.sparkleSignature!),
+                    publicKey: SimplePublicKey(base64Decode(updatePublicKey),
+                        type: KeyPairType.ed25519))))) {
+      throw StateError('Mac 安装包缺少有效的 Sparkle 独立签名。');
+    }
   }
   final repo = jsonDecode(await run('gh', [
     'repo',

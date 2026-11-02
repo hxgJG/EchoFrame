@@ -76,6 +76,24 @@ void main() {
     expect(UpdateManifest.verify([1], base64Encode(List.filled(63, 0)), public),
         throwsFormatException);
   });
+  test('Mac 安装签名兼容旧清单，但拒绝畸形或跨平台签名', () async {
+    final legacy = await signed(fixture());
+    expect(legacy.select('macos', 'arm64', '13.0').sparkleSignature, isNull);
+    final value = fixture();
+    final signature = base64Encode(List<int>.filled(64, 1));
+    ((value['packages'] as List).last as Map)['sparkleSignature'] = signature;
+    expect(
+        (await signed(value)).select('macos', 'arm64', '13.0').sparkleSignature,
+        signature);
+    for (final invalid in ['', 'bad', base64Encode(List<int>.filled(63, 1))]) {
+      ((value['packages'] as List).last as Map)['sparkleSignature'] = invalid;
+      await expectLater(signed(value), throwsFormatException);
+    }
+    final android = fixture();
+    ((android['packages'] as List).first as Map)['sparkleSignature'] =
+        signature;
+    await expectLater(signed(android), throwsFormatException);
+  });
   test('合法签名也不能指向任意 URL 或 latest 安装包', () async {
     for (final url in [
       'http://github.com/a.apk',

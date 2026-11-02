@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
+import '../../app/spectrum_palette.dart';
+import '../../core/models/lumio_settings.dart';
 import '../../platform/playback/audio_spectrum_controller.dart';
 
 class LyricSpectrumBackground extends StatefulWidget {
@@ -9,12 +11,10 @@ class LyricSpectrumBackground extends StatefulWidget {
       {super.key,
       required this.controller,
       required this.enabled,
-      required this.color,
-      required this.accent});
+      this.colorStyle = SpectrumColorStyle.level});
   final AudioSpectrumController controller;
   final bool enabled;
-  final Color color;
-  final Color accent;
+  final SpectrumColorStyle colorStyle;
 
   @override
   State<LyricSpectrumBackground> createState() =>
@@ -95,17 +95,18 @@ class _LyricSpectrumBackgroundState extends State<LyricSpectrumBackground> {
   Widget build(BuildContext context) => IgnorePointer(
         child: RepaintBoundary(
             child: CustomPaint(
-          painter: _SpectrumPainter(_frame, widget.color, widget.accent),
+          painter: _SpectrumPainter(_frame, widget.colorStyle),
           child: const SizedBox.expand(),
         )),
       );
 }
 
 class _SpectrumPainter extends CustomPainter {
-  _SpectrumPainter(this.frame, this.color, this.accent) : super(repaint: frame);
+  _SpectrumPainter(this.frame, this.colorStyle) : super(repaint: frame);
   final ValueNotifier<List<double>> frame;
-  final Color color;
-  final Color accent;
+  final SpectrumColorStyle colorStyle;
+  Size? _shaderSize;
+  Shader? _paletteShader;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -113,22 +114,24 @@ class _SpectrumPainter extends CustomPainter {
     final step = (size.width - 24) / 24;
     final width = math.min(10.0, step * 0.52);
     final baseline = size.height - 12;
+    final maximumHeight = math.min(size.height * 0.68, 220.0);
+    final palette = SpectrumPalette.preset(colorStyle);
+    if (_shaderSize != size) {
+      // The classic scale stays fixed to the full height, not each moving bar.
+      _paletteShader = palette.gradient.createShader(Rect.fromLTWH(
+          12, baseline - maximumHeight, size.width - 24, maximumHeight));
+      _shaderSize = size;
+    }
     final paint = Paint();
     for (var i = 0; i < 24; i++) {
       final level = frame.value[i];
       if (level < 0.005) continue;
-      final height = math.min(size.height * 0.68, 220.0) * level;
+      final height = maximumHeight * level;
       final x = 12 + step * (i + 0.5);
       // Keep the middle calm, where lyrics carry the strongest contrast.
       final edge = ((i - 11.5).abs() / 11.5);
-      final tint = Color.lerp(color, accent, i / 23 * 0.35)!;
-      paint.shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            tint.withValues(alpha: 0.035 + edge * 0.035),
-            tint.withValues(alpha: 0.12 + edge * 0.06),
-          ]).createShader(Rect.fromLTWH(x, baseline - height, width, height));
+      paint.shader = _paletteShader;
+      paint.color = Colors.white.withValues(alpha: 0.12 + edge * 0.06);
       canvas.drawRRect(
           RRect.fromRectAndCorners(
               Rect.fromLTWH(x - width / 2, baseline - height, width, height),
@@ -140,5 +143,5 @@ class _SpectrumPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SpectrumPainter oldDelegate) =>
-      color != oldDelegate.color || accent != oldDelegate.accent;
+      colorStyle != oldDelegate.colorStyle;
 }

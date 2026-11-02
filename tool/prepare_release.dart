@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 import '../lib/core/updates/release_config.dart';
 import '../lib/core/updates/update_manifest.dart';
+import 'sign_macos.dart';
 
 Future<String> run(String command, List<String> args) async {
   final result = await Process.run(command, args);
@@ -113,20 +114,12 @@ Future<void> main(List<String> args) async {
   folder.createSync(recursive: true);
   final staged = '${folder.path}/staging/Lumio.app';
   await run('/usr/bin/ditto', [app.path, staged]);
-  // Incremental Flutter builds may invalidate the App.framework seal. Re-seal only the staging copy.
-  await run('/usr/bin/codesign',
-      ['--force', '--sign', '-', '$staged/Contents/Frameworks/App.framework']);
-  await run('/usr/bin/codesign', [
-    '--force',
-    '--sign',
-    '-',
-    '--options',
-    '0',
-    '--entitlements',
-    'macos/Runner/Release.entitlements',
-    staged
-  ]);
-  await run('/usr/bin/codesign', ['--verify', '--deep', '--strict', staged]);
+  await sealMacBundle(staged);
+  if (await run('/usr/libexec/PlistBuddy',
+          ['-c', 'Print :SUPublicEDKey', '$staged/Contents/Info.plist']) !=
+      updatePublicKey) {
+    throw StateError('Sparkle 公钥与发布公钥不一致。');
+  }
   for (final entity in Directory(staged)
       .listSync(recursive: true, followLinks: false)
       .whereType<File>()) {
@@ -147,6 +140,12 @@ Future<void> main(List<String> args) async {
     '${folder.path}/$zipName'
   ]);
   final packages = <Map<String, Object?>>[];
+  final secret =
+      jsonDecode(File('$keyRoot/manifest-key.json').readAsStringSync()) as Map;
+  if (secret['publicKey'] != updatePublicKey)
+    throw StateError('发布密钥与客户端内置公钥不一致，禁止发布。');
+  final pair = await Ed25519()
+      .newKeyPairFromSeed(base64Decode(secret['seed'] as String));
   for (final platform in ['android', 'macos']) {
     final name = platform == 'android' ? apkName : zipName;
     final file = File('${folder.path}/$name');
@@ -161,7 +160,11 @@ Future<void> main(List<String> args) async {
       'sha256': (await sha256.bind(file.openRead()).first).toString(),
       'url':
           'https://github.com/$releaseRepository/releases/download/$tag/$name',
-      if (platform == 'android') 'certificateSha256': certificate
+      if (platform == 'android') 'certificateSha256': certificate,
+      if (platform == 'macos')
+        'sparkleSignature': base64Encode(
+            (await Ed25519().sign(await file.readAsBytes(), keyPair: pair))
+                .bytes),
     });
   }
   final data = utf8.encode('${const JsonEncoder.withIndent('  ').convert({
@@ -175,12 +178,6 @@ Future<void> main(List<String> args) async {
         'localPreview': preview,
         'packages': packages
       })}\n');
-  final secret =
-      jsonDecode(File('$keyRoot/manifest-key.json').readAsStringSync()) as Map;
-  if (secret['publicKey'] != updatePublicKey)
-    throw StateError('发布密钥与客户端内置公钥不一致，禁止发布。');
-  final pair = await Ed25519()
-      .newKeyPairFromSeed(base64Decode(secret['seed'] as String));
   final signature =
       base64Encode((await Ed25519().sign(data, keyPair: pair)).bytes);
   await UpdateManifest.verify(data, signature, updatePublicKey);
@@ -188,7 +185,7 @@ Future<void> main(List<String> args) async {
   File('${folder.path}/update-manifest.sig').writeAsStringSync('$signature\n');
   File('${folder.path}/RELEASE_NOTES.md').writeAsStringSync(notes);
   File('${folder.path}/INSTALL.md').writeAsStringSync(
-      'Android：正式版后续版本可覆盖更新；旧测试签名与正式签名不兼容，不要自动卸载。确需卸载时，请先导出备份，并另外保存 App 内接收的音视频文件。新版备份只包含应用数据，不包含实际音视频和封面文件。\n\nmacOS：未经过 Apple 公证。解压、退出 Lumio、手动替换应用；保留原有应用数据，按系统提示处理，不关闭系统保护。\n');
+      'Android：正式版后续版本可覆盖更新；旧测试签名与正式签名不兼容，不要自动卸载。确需卸载时，请先导出备份，并另外保存 App 内接收的音视频文件。新版备份只包含应用数据，不包含实际音视频和封面文件。\n\nmacOS：已安装支持 Sparkle 的版本时，可在应用内下载校验后安装并重启；新版成功启动后清理下载包与回退副本。此前旧版仍需解压、退出并手动替换一次。保留原有应用数据，当前临时签名未经 Apple 公证，请按系统提示处理，不关闭系统保护。\n');
   stdout.writeln(
       '已准备并验签：${folder.path}。${preview ? '本地预览附件禁止公开上传。' : '待确认后创建草稿和回读验收；未公开。'}');
 }

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'app/app_state.dart';
 import 'app/theme.dart';
+import 'app/spectrum_palette.dart';
 import 'features/music/music_home_page.dart';
 import 'features/music/music_library_page.dart';
 import 'features/music/now_playing_page.dart';
@@ -31,6 +32,7 @@ class LumioApp extends StatefulWidget {
 }
 
 class _LumioAppState extends State<LumioApp> {
+  static const _updateLifecycle = MethodChannel('lumio/app_update_lifecycle');
   final _navigatorKey = GlobalKey<NavigatorState>();
   LumioAppState get state => widget.state;
 
@@ -39,6 +41,24 @@ class _LumioAppState extends State<LumioApp> {
     super.initState();
     state.desktopLyrics.onOpenCalibration = _openCalibration;
     state.onExternalMediaOpened = _openExternalMedia;
+    if (Platform.isMacOS) {
+      _updateLifecycle.setMethodCallHandler((call) async {
+        if (call.method == 'prepareForInstall') {
+          await state.prepareForApplicationUpdate();
+          return null;
+        }
+        throw MissingPluginException();
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        try {
+          await state.startupReady;
+          if (mounted)
+            await _updateLifecycle.invokeMethod<void>('launchSucceeded');
+        } on Object {
+          // 启动未完成或清理失败时保留旧下载包，不影响应用继续运行。
+        }
+      });
+    }
   }
 
   @override
@@ -80,6 +100,7 @@ class _LumioAppState extends State<LumioApp> {
 
   @override
   void dispose() {
+    if (Platform.isMacOS) _updateLifecycle.setMethodCallHandler(null);
     state.desktopLyrics.onOpenCalibration = null;
     state.onExternalMediaOpened = null;
     super.dispose();
@@ -103,6 +124,8 @@ class _LumioAppState extends State<LumioApp> {
           title: '忆光',
           builder: (context, child) {
             final scheme = Theme.of(context).colorScheme;
+            final spectrumPalette =
+                SpectrumPalette.preset(state.settings.spectrumColorStyle);
             state.desktopLyrics.setAppearance({
               'backgroundColor': scheme.surfaceContainerLow.toARGB32(),
               'foregroundColor': LumioTheme.audioColor(context).toARGB32(),
@@ -110,6 +133,9 @@ class _LumioAppState extends State<LumioApp> {
               'borderColor': scheme.outlineVariant.toARGB32(),
               'dark': scheme.brightness == Brightness.dark,
               'spectrumAccentColor': scheme.secondary.toARGB32(),
+              'spectrumColors': spectrumPalette.desktopColors,
+              'spectrumStops': spectrumPalette.stops,
+              'spectrumVertical': true,
             });
             return child!;
           },

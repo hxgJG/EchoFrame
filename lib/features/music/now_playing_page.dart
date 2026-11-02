@@ -420,8 +420,7 @@ class _LyricsStageState extends State<_LyricsStage> {
           controller: widget.state.audioSpectrum,
           enabled:
               widget.state.settings.lyricSpectrumEnabled && lines.isNotEmpty,
-          color: audioColor,
-          accent: scheme.secondary,
+          colorStyle: widget.state.settings.spectrumColorStyle,
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),

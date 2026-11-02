@@ -5,12 +5,14 @@ import FlutterMacOS
 enum LumioMacOSPlugins {
   private static var retainedPlugins: [AnyObject] = []
   static var subtitleWorkbench: LumioSubtitleWorkbenchPlugin?
+  static var appUpdate: LumioAppUpdatePlugin?
 
   static func register(with registry: FlutterPluginRegistry, window: NSWindow) {
     let registrar = registry.registrar(forPlugin: "LumioMacOSPlugins")
     let bookmarkStore = SecurityScopedBookmarkStore()
     let storage = LumioAppStoragePlugin(registrar: registrar)
     let appUpdate = LumioAppUpdatePlugin(registrar: registrar)
+    self.appUpdate = appUpdate
     let transfer = LumioDeviceTransferPlugin(registrar: registrar, bookmarks: bookmarkStore, window: window)
     let mediaLibrary = LumioMediaLibraryPlugin(
       registrar: registrar,

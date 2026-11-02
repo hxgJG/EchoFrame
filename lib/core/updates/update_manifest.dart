@@ -13,12 +13,14 @@ class UpdatePackage {
       required this.size,
       required this.sha256,
       required this.url,
-      this.certificateSha256});
+      this.certificateSha256,
+      this.sparkleSignature});
   final String platform, minimumOS, fileName, sha256;
   final List<String> architectures;
   final int size;
   final Uri url;
   final String? certificateSha256;
+  final String? sparkleSignature;
 }
 
 class UpdateManifest {
@@ -77,6 +79,7 @@ class UpdateManifest {
       final architectures = (p['architectures'] as List).cast<String>();
       final minimumOS = p['minimumOS'] as String;
       final certificate = p['certificateSha256'] as String?;
+      final sparkleSignature = p['sparkleSignature'] as String?;
       if (name != 'Lumio-$version-$build-$platform-universal.$extension' ||
           url.toString() !=
               'https://github.com/$releaseRepository/releases/download/v$version-$build/$name' ||
@@ -95,6 +98,12 @@ class UpdateManifest {
                   !RegExp(r'^[a-f0-9]{64}$').hasMatch(certificate)))) {
         throw const FormatException('更新包信息不符合发布规则。');
       }
+      if (sparkleSignature != null &&
+          (platform != 'macos' ||
+              !RegExp(r'^[A-Za-z0-9+/]{86}==$').hasMatch(sparkleSignature) ||
+              base64Decode(sparkleSignature).length != 64)) {
+        throw const FormatException('Mac 安装包签名格式不正确。');
+      }
       if (packages.any((e) => e.platform == platform))
         throw const FormatException('平台更新包重复。');
       packages.add(UpdatePackage(
@@ -105,7 +114,8 @@ class UpdateManifest {
           size: size,
           sha256: hash,
           url: url,
-          certificateSha256: certificate));
+          certificateSha256: certificate,
+          sparkleSignature: sparkleSignature));
     }
     return UpdateManifest(
         version: version,

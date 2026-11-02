@@ -5,6 +5,7 @@ import 'settings_theme.dart';
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../app/theme_catalog.dart';
+import '../../app/spectrum_palette.dart';
 import '../../core/models/lumio_settings.dart';
 import '../../core/models/media_item.dart';
 import '../../platform/desktop_lyrics/desktop_lyrics_controller.dart';
@@ -117,6 +118,7 @@ class SettingsDetailPage extends StatelessWidget {
                   value: state.settings.lyricSpectrumEnabled,
                   onChanged: state.setLyricSpectrumEnabled,
                 ),
+                _spectrumColorTile(context),
                 ListTile(
                   leading: const Icon(Icons.color_lens_rounded),
                   title: const Text('主题色'),
@@ -157,6 +159,7 @@ class SettingsDetailPage extends StatelessWidget {
                 onChanged: (value) =>
                     state.setLyricSpectrumEnabled(value, desktop: true),
               ),
+              _spectrumColorTile(context),
               SwitchListTile(
                 secondary: const Icon(Icons.lyrics_outlined),
                 title: const Text('显示桌面歌词'),
@@ -932,6 +935,41 @@ class SettingsDetailPage extends StatelessWidget {
       state.addExcludedFolder(value);
     }
   }
+
+  Widget _spectrumColorTile(BuildContext context) => _SettingsChoiceTile(
+        leading: const Icon(Icons.gradient_rounded),
+        title: const Text('频谱配色'),
+        subtitle: const Text('按固定电平阈值分层着色，歌词页与桌面歌词共用'),
+        controlWidth: 220,
+        control: DropdownButton<SpectrumColorStyle>(
+          isExpanded: true,
+          underline: const SizedBox.shrink(),
+          style: Theme.of(context).textTheme.bodyLarge,
+          value: state.settings.spectrumColorStyle,
+          items: SpectrumColorStyle.values.map((style) {
+            final palette = SpectrumPalette.preset(style);
+            return DropdownMenuItem(
+              value: style,
+              child: Row(children: [
+                Container(
+                  width: 40,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(3),
+                    gradient: LinearGradient(colors: palette.swatches),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Flexible(
+                    child: Text(style.label, overflow: TextOverflow.ellipsis)),
+              ]),
+            );
+          }).toList(growable: false),
+          onChanged: (style) {
+            if (style != null) state.setSpectrumColorStyle(style);
+          },
+        ),
+      );
 
   Future<void> _showAddIncludedFolderDialog(BuildContext context) async {
     final controller = TextEditingController();

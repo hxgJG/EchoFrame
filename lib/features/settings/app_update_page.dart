@@ -29,12 +29,14 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
   }
 
   Future<void> _open() async {
-    if (Platform.isAndroid) {
+    if (Platform.isAndroid || Platform.isMacOS) {
       final accepted = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
                   title: const Text('安装更新'),
-                  content: const Text('安装由系统确认，过程中播放可能中断。不会自动卸载应用或清空数据。是否继续？'),
+                  content: Text(Platform.isMacOS
+                      ? '将打开 Sparkle 安装窗口。确认后会保存播放记录、退出、替换应用并重新启动；新版成功启动后清理下载包。不会删除歌曲、歌词或设置。是否继续？'
+                      : '安装由系统确认，过程中播放可能中断。不会自动卸载应用或清空数据。是否继续？'),
                   actions: [
                     TextButton(
                         onPressed: () => Navigator.pop(context, false),
@@ -92,8 +94,7 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                   leading: const Icon(Icons.system_update_alt),
                   title: Text(controller.environment == null
                       ? '读取当前版本…'
-                      : '当前版本 ${controller.environment!['version']}（${controller.environment!['buildNumber']}）'),
-                  subtitle: const Text('稳定版 · GitHub 公开发布 · 无需账号')),
+                      : '当前版本 ${controller.environment!['version']}（${controller.environment!['buildNumber']}）')),
               const SizedBox(height: 12),
               Text(controller.message),
               const SizedBox(height: 16),
@@ -132,7 +133,7 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                       child: FilledButton.icon(
                           onPressed: controller.busy ? null : _open,
                           icon: const Icon(Icons.install_desktop),
-                          label: Text(Platform.isAndroid ? '安装更新' : '显示安装包')))
+                          label: Text(Platform.isAndroid ? '安装更新' : '安装并重启')))
                 else
                   Align(
                       alignment: Alignment.centerLeft,
@@ -168,7 +169,7 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
               const SizedBox(height: 12),
               if (Platform.isMacOS)
                 const Text(
-                    'macOS 当前采用临时签名，未经过 Apple 公证。下载后需在 Finder 解压、退出 Lumio、手动替换，再重新启动。请按系统提示处理，不关闭系统保护。'),
+                    'macOS 保留沙盒，由 Sparkle 完成验签、安装与重启，无需手动解压替换。当前仍为临时签名、未经 Apple 公证，可能需要系统授权；请按提示处理，不关闭系统保护。新版启动成功后清理下载包，安装失败不会清空应用数据。'),
               const SizedBox(height: 12),
               const Text(
                   '只在校验通过后提供安装入口。离开本页会暂停下载并保留进度，重新检查更新后可继续；未完成缓存保留 7 天（系统清理缓存后需重新下载）。服务器不支持续传时自动重新下载。'),

@@ -277,6 +277,10 @@ private final class LyricsView: NSView {
   private let spectrumLayer = CAGradientLayer()
   private let spectrumMask = CAShapeLayer()
   private var spectrumBands = [Double](repeating: 0, count: 24)
+  private var spectrumColorValues: [UInt32] = []
+  private var spectrumLocations: [Double] = []
+  private var spectrumVertical = false
+  private var spectrumUsesPreset = false
   private let progressLayer = CALayer()
   private let progressClip = CAShapeLayer()
   private let progressTrack = CALayer()
@@ -400,8 +404,9 @@ private final class LyricsView: NSView {
     super.layout()
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    spectrumLayer.frame = bounds
-    spectrumMask.frame = bounds
+    spectrumLayer.frame = CGRect(x: 0, y: 0, width: min(360, bounds.width), height: bounds.height)
+    spectrumMask.frame = spectrumLayer.bounds
+    layoutSpectrumGradient()
     CATransaction.commit()
     drawSpectrum(animated: false)
     layoutProgress()
@@ -454,15 +459,17 @@ private final class LyricsView: NSView {
   }
 
   func applyAppearance(_ args: [String: Any]) {
-    func color(_ key: String) -> NSColor? {
-      guard let number = args[key] as? NSNumber else { return nil }
-      let argb = number.uint32Value
+    func colorValue(_ argb: UInt32) -> NSColor {
       return NSColor(
         srgbRed: CGFloat((argb >> 16) & 255) / 255,
         green: CGFloat((argb >> 8) & 255) / 255,
         blue: CGFloat(argb & 255) / 255,
         alpha: CGFloat((argb >> 24) & 255) / 255
       )
+    }
+    func color(_ key: String) -> NSColor? {
+      guard let number = args[key] as? NSNumber else { return nil }
+      return colorValue(number.uint32Value)
     }
     if let background = color("backgroundColor") {
       layer?.backgroundColor = background.withAlphaComponent(0.82).cgColor
@@ -473,8 +480,33 @@ private final class LyricsView: NSView {
       progressTrack.backgroundColor = foreground.withAlphaComponent(0.12).cgColor
       progressFill.backgroundColor = foreground.withAlphaComponent(0.65).cgColor
       let accent = color("spectrumAccentColor") ?? foreground
-      spectrumLayer.colors = [foreground.withAlphaComponent(0.18).cgColor,
-        accent.withAlphaComponent(0.10).cgColor]
+      let requested = (args["spectrumColors"] as? [NSNumber] ?? []).map { $0.uint32Value }
+      let requestedStops = (args["spectrumStops"] as? [NSNumber] ?? []).map { $0.doubleValue }
+      let validStops = requestedStops.count == requested.count
+        && requestedStops.allSatisfy { $0.isFinite && $0 >= 0 && $0 <= 1 }
+        && zip(requestedStops, requestedStops.dropFirst()).allSatisfy { $0 <= $1 }
+      let usesPreset = (2...32).contains(requested.count) && validStops
+      let values = usesPreset ? requested : [
+        (args["foregroundColor"] as? NSNumber)?.uint32Value ?? 0,
+        (args["spectrumAccentColor"] as? NSNumber)?.uint32Value ?? 0,
+      ]
+      let locations = usesPreset ? requestedStops : []
+      let vertical = usesPreset && args["spectrumVertical"] as? Bool == true
+      if values != spectrumColorValues || locations != spectrumLocations
+        || vertical != spectrumVertical || usesPreset != spectrumUsesPreset {
+        spectrumColorValues = values
+        spectrumLocations = locations
+        spectrumVertical = vertical
+        spectrumUsesPreset = usesPreset
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layoutSpectrumGradient()
+        spectrumLayer.locations = usesPreset ? locations.map { NSNumber(value: $0) } : nil
+        spectrumLayer.colors = usesPreset
+          ? values.map { colorValue($0).withAlphaComponent(0.18).cgColor }
+          : [foreground.withAlphaComponent(0.18).cgColor, accent.withAlphaComponent(0.10).cgColor]
+        CATransaction.commit()
+      }
     }
     if let secondary = color("secondaryColor") {
       titleLabel.textColor = secondary
@@ -482,6 +514,17 @@ private final class LyricsView: NSView {
     }
     if let dark = args["dark"] as? Bool {
       appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+    }
+  }
+
+  private func layoutSpectrumGradient() {
+    // Align thresholds with the bars' actual baseline and full-scale height.
+    if spectrumVertical && bounds.height > 6 {
+      spectrumLayer.startPoint = CGPoint(x: 0.5, y: (bounds.height - 3) / bounds.height)
+      spectrumLayer.endPoint = CGPoint(x: 0.5, y: 3 / bounds.height)
+    } else {
+      spectrumLayer.startPoint = CGPoint(x: 0, y: 0.5)
+      spectrumLayer.endPoint = CGPoint(x: 1, y: 0.5)
     }
   }
 

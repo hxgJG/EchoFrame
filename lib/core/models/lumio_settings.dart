@@ -15,6 +15,8 @@ enum MusicViewMode { list, grid }
 // 保留已持久化的枚举名；显示名称与色值按当前品牌色板映射。
 enum ThemeAccent { blue, coral, teal, violet }
 
+enum SpectrumColorStyle { level, classic, rainbow, ocean, neon, fire, aurora }
+
 class LumioSettings {
   const LumioSettings({
     this.themeMode = ThemeMode.light,
@@ -37,6 +39,7 @@ class LumioSettings {
     this.themeAccent = ThemeAccent.blue,
     this.lyricSpectrumEnabled = true,
     this.desktopSpectrumEnabled = true,
+    this.spectrumColorStyle = SpectrumColorStyle.level,
   });
 
   factory LumioSettings.fromJson(Map<String, Object?> json) {
@@ -78,6 +81,10 @@ class LumioSettings {
       themeAccent: _themeAccentFromName(json['themeAccent']?.toString()),
       lyricSpectrumEnabled: json['lyricSpectrumEnabled'] != false,
       desktopSpectrumEnabled: json['desktopSpectrumEnabled'] != false,
+      spectrumColorStyle: SpectrumColorStyle.values.firstWhere(
+        (style) => style.name == json['spectrumColorStyle'],
+        orElse: () => SpectrumColorStyle.level,
+      ),
     );
   }
 
@@ -101,6 +108,7 @@ class LumioSettings {
   final ThemeAccent themeAccent;
   final bool lyricSpectrumEnabled;
   final bool desktopSpectrumEnabled;
+  final SpectrumColorStyle spectrumColorStyle;
 
   bool get crossfadeEnabled => crossfadeSeconds > 0;
 
@@ -135,6 +143,7 @@ class LumioSettings {
     ThemeAccent? themeAccent,
     bool? lyricSpectrumEnabled,
     bool? desktopSpectrumEnabled,
+    SpectrumColorStyle? spectrumColorStyle,
   }) {
     return LumioSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -159,6 +168,7 @@ class LumioSettings {
       lyricSpectrumEnabled: lyricSpectrumEnabled ?? this.lyricSpectrumEnabled,
       desktopSpectrumEnabled:
           desktopSpectrumEnabled ?? this.desktopSpectrumEnabled,
+      spectrumColorStyle: spectrumColorStyle ?? this.spectrumColorStyle,
     );
   }
 
@@ -184,6 +194,7 @@ class LumioSettings {
       'themeAccent': themeAccent.name,
       'lyricSpectrumEnabled': lyricSpectrumEnabled,
       'desktopSpectrumEnabled': desktopSpectrumEnabled,
+      'spectrumColorStyle': spectrumColorStyle.name,
     };
   }
 }

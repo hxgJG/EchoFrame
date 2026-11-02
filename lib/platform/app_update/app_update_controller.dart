@@ -308,7 +308,8 @@ class AppUpdateController extends ChangeNotifier {
         'sha256': package!.sha256,
         'buildNumber': manifest!.buildNumber,
         'version': manifest!.version,
-        'certificateSha256': package!.certificateSha256
+        'certificateSha256': package!.certificateSha256,
+        'sparkleSignature': package!.sparkleSignature,
       };
 
   Future<void> open(Future<void> Function() saveSession) async {
@@ -324,7 +325,7 @@ class AppUpdateController extends ChangeNotifier {
           ? '请在系统设置允许本应用安装更新，返回后再次点击“安装更新”。不会自动开始安装。'
           : Platform.isAndroid
               ? '已交给系统安装器，请完成系统确认；取消不会清空数据。'
-              : '已在 Finder 定位。解压后先退出 Lumio，再手动替换应用。';
+              : '已打开安装窗口。Sparkle 会再次验签，确认后安装并重启；新版启动成功后清理下载包。';
       phase = UpdatePhase.ready;
     } on Object catch (e) {
       phase = UpdatePhase.ready;

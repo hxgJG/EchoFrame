@@ -1,5 +1,7 @@
 # Lumio 应用发布与更新方案
 
+> 2026-11-02 更新：从 1.0.7（8）起，macOS 保留 App Sandbox，通过 Sparkle 2.10.1 安装并重启。下文首版“仅下载、手动替换”的内容保留为历史决策，当前实现及验收方法见文末“macOS 应用内安装”。临时签名不等同于不能实现应用内更新，也不等同于 Apple 公证。
+
 本方案覆盖 GitHub 安装包发布、App 内检查与下载更新，以及 Android 和 macOS 的安装边界。从新的首个发布版本建立更新基线，不考虑此前测试版本的覆盖安装、签名迁移或数据迁移。首版采用独立公开发布仓库，不改变源码仓库可见性；macOS 暂无 Apple Developer Program 账号，先提供下载与手动安装，不实现自动覆盖。
 
 ## 当前配置与已确认范围
@@ -123,3 +125,42 @@ GitHub CLI 已安装，当前尚未登录。公开仓库创建、首次发布和
 7. 取得公开发布确认，执行 `dart run tool/publish_release.dart publish build/releases/v1.0.0-1`。该命令再次回读校验后才取消草稿状态，设为 latest。后续更新使用更高构建号与新的说明文件。
 
 附件只包含 APK、macOS ZIP、`update-manifest.json`、`update-manifest.sig`、`RELEASE_NOTES.md` 与 `INSTALL.md`。安装包含应用程序及更新公钥，不含源码仓库、用户媒体、备份、设备身份或发布私钥。源码中的 UI 与逻辑可从公开二进制被分析，这与源码仓库是否公开是不同的边界。
+
+## macOS 应用内安装（2026-11-02）
+
+需要先安装含 Sparkle 的基线版本。此前旧客户端不会自动获得安装能力；本次没有公开发布新附件。后续发布仍使用原有六个附件，不增加独立 appcast 服务。
+
+### 下载与安装
+
+1. 保留现有 GitHub HTTPS 下载、清单验签、SHA-256 校验、断点续传和网络诊断。
+2. 发布工具使用既有 Ed25519 发布密钥对最终 Mac ZIP 独立签名，把 `sparkleSignature` 加入已签名清单。客户端与 Sparkle 内置同一发布公钥；私钥仍只在仓库外。旧清单可以读取，但无独立签名的旧包不进入 Sparkle 安装。
+3. 点击“安装并重启”后，原生层重新校验缓存文件的路径、大小、哈希和独立签名。本机临时 HTTP 服务仅绑定 `127.0.0.1` 随机端口，带随机路径令牌，只提供这一份已校验 ZIP 和生成的更新条目。Sparkle 不会从 GitHub 重复下载整包，也没有局域网目录浏览入口。
+4. Sparkle 在解压前再次验签，通过 Installer XPC 在沙盒外完成程序替换和重启。关闭自动检查、自动下载和系统资料上报，保留主程序沙盒；仅添加当前 bundle identifier 的 `-spks`、`-spki` 通信权限，不关闭系统保护。
+
+采用官方 Sparkle 2.10.1 发布包，版本和 SHA-256 固定于 `macos/Sparkle.podspec`。CocoaPods 公共索引当时尚无该版本，未使用第三方镜像或浮动分支。签名参考 [Sparkle 沙盒集成](https://sparkle-project.org/documentation/sandboxing/)；临时签名仍不保证另一台 Mac 不出现系统授权提示。
+
+### 成功启动后才清理旧包
+
+- 最终退出前再次保存播放状态；视频导出、数据备份或恢复尚未结束时不开始安装。保存失败时暂停重启，不强行杀进程。
+- 在专用更新缓存中保留经代码签名校验的旧程序副本：`rollback-构建号-SHA256/Lumio.app`。Sparkle 替换失败会尝试恢复旧程序；如果新版启动异常，这份额外副本和下载 ZIP 仍保留，可用于人工恢复。
+- 新版完成 Flutter 首帧与应用数据恢复后回报 `launchSucceeded`。只有运行路径相同、当前构建号达到目标版本时，才删除对应 ZIP、回退副本和 `pending-install.json`。只处理专用缓存中的精确匹配路径，拒绝符号链接，不删除媒体、歌词、设置、播放记录或用户备份。
+- 清理失败会保留安装记录，后续成功启动可重试；不会把清理失败当成应用启动失败。此机制不是“新版启动异常时自动回滚”。
+
+### 构建与回归验收
+
+正常入口构建并封装沙盒临时签名：
+
+```bash
+flutter build macos --release --no-pub --target=lib/main.dart
+dart run tool/sign_macos.dart build/macos/Build/Products/Release/Lumio.app
+```
+
+签名工具按内到外处理 Sparkle 辅助程序和框架，展开当前 bundle identifier 的沙盒通信权限，最后执行严格完整性校验。`prepare_release.dart` 已复用该流程；`publish_release.dart` 在上传前检查 Mac ZIP 的独立签名。
+
+独立测试入口为 `tool/qa/macos_update_main.dart`，只能用于隔离的 `com.hxg.lumio.updateqa` 应用，不得当正式入口分发。准备两份独立签名的 QA 应用：旧版 1.0.7（8）和新版 1.0.8（9），将新版压成 ZIP，然后使用真实 QA 环境返回的缓存目录运行：
+
+```bash
+dart run tool/qa/prepare_macos_update.dart /private/tmp/lumio-updater-qa-4uxvdn/candidate-delayed.zip /Users/hexuegang/Library/Containers/com.hxg.lumio.updateqa/Data/Library/Caches/Lumio/updates
+```
+
+上述路径对应本次验收执行示例，测试程序验收后移除，复测时替换成新建的测试目录。2026-11-02 已验证错误签名被拒绝、两轮真实沙盒 XPC 替换与自动重启，以及新版尚未回报成功时旧副本/ZIP 均保留、回报后再删除。静态检查与全部 146 项测试通过；本机已重新安装 1.0.7（8）。正式 GitHub 公开发布与另一台 Mac 的系统授权体验仍需后续验收。

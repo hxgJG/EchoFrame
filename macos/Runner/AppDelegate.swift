@@ -4,6 +4,7 @@ import FlutterMacOS
 @main
 class AppDelegate: FlutterAppDelegate {
   override func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    if LumioMacOSPlugins.appUpdate?.preparationFailed == true { return .terminateCancel }
     if let reply = LumioMacOSPlugins.subtitleWorkbench?.requestTermination(sender) { return reply }
     return super.applicationShouldTerminate(sender)
   }
