@@ -112,6 +112,23 @@ void main() {
             'https://release-assets.githubusercontent.com/a?token=x')),
         true);
   });
+  test('清单请求每次访问网络并在全部重定向要求重新验证缓存', () async {
+    final client = _Client((uri) async => uri.host == 'github.com'
+        ? _Response(const Stream.empty(),
+            statusCode: 302,
+            location: 'https://release-assets.githubusercontent.com/manifest')
+        : _Response(Stream.value(bytes)));
+    final transport = UpdateTransport(clientFactory: () => client);
+    final uri = Uri.parse('https://github.com/example/latest?check=1');
+    expect(await transport.smallFile(uri, 65536), bytes);
+    expect(await transport.smallFile(uri, 65536), bytes);
+    expect(client.visited.length, 4);
+    for (final request in client.requests) {
+      expect(request.headers.value(HttpHeaders.cacheControlHeader),
+          'no-cache, no-store');
+      expect(request.headers.value(HttpHeaders.pragmaHeader), 'no-cache');
+    }
+  });
   test('流式下载验哈希并原子转为完整缓存', () async {
     final transport = UpdateTransport(
         clientFactory: () => _Client((_) async => _Response(

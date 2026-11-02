@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "channel": "stable",
+  "version": "1.0.7",
+  "buildNumber": 8,
+  "publishedAt": "2026-11-02T08:10:41.128934Z",
+  "notes": "# Lumio 1.0.7\n\n频谱新增独立于主题的七种电平分层配色，支持七彩、经典绿黄红、彩虹、冰蓝、紫粉、烈焰和极光。各频段达到固定电平阈值后才显示更高层颜色；不按歌曲单独归一化，也不额外放大弱信号。歌词页与桌面歌词共用设置，桌面频谱保持固定宽度、左对齐。\n\nmacOS 保留 App Sandbox，接入 Sparkle 安装与重启。沿用 GitHub 下载、断点续传和网络诊断，安装时复用本机已下载包并再次验签，不重复从 GitHub 下载。安装前保存状态并保留旧程序回退副本；新版成功启动并完成资料恢复后，才清理对应下载包和回退副本。\n\n注意：1.0.6（7）及更早的 Mac 客户端仍需手动替换一次，以获得 Sparkle 安装能力。已经安装本次 1.0.7（8）本机验收版的用户无需重复安装；后续更高版本可以从软件内安装更新。当前仍采用临时签名、未经过 Apple 公证，可能需要系统授权，请勿关闭系统安全保护。\n\n简化应用更新页，删除“稳定版 · GitHub 公开发布 · 无需账号”说明。Android 沿用既有正式签名，可覆盖更新，不需要卸载或清空数据。\n",
+  "sourceCommit": "29f49e81eebfeb5634d2e74943e32f9b85468609",
+  "localPreview": false,
+  "packages": [
+    {
+      "platform": "android",
+      "architectures": [
+        "arm64",
+        "armv7",
+        "x86_64"
+      ],
+      "minimumOS": "24",
+      "fileName": "Lumio-1.0.7-8-android-universal.apk",
+      "size": 62846840,
+      "sha256": "05fd53d6251b16d14068dab3aa5d74dc40b22c0fb34584a606ad147007a431ae",
+      "url": "https://github.com/hxgJG/Lumio-Releases/releases/download/v1.0.7-8/Lumio-1.0.7-8-android-universal.apk",
+      "certificateSha256": "b0e67f8e408965de26112d8209015db5df340722345eaf39828a80431b1d55ae"
+    },
+    {
+      "platform": "macos",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "minimumOS": "13.0",
+      "fileName": "Lumio-1.0.7-8-macos-universal.zip",
+      "size": 23961341,
+      "sha256": "7e7adb4513dd988d44e1e3013bb3980f63cc629c2dbb2c6a4857be33186c8742",
+      "url": "https://github.com/hxgJG/Lumio-Releases/releases/download/v1.0.7-8/Lumio-1.0.7-8-macos-universal.zip",
+      "sparkleSignature": "/iixtlrqGTXJtGlvbQUbrDhQK5Bsjbo9whQPc9RIymM4B4Fop9XVE5EirlLsNh5BMUzsEkUVH8t37Dx/cDZ5Cg=="
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "channel": "stable",
+  "version": "1.0.8",
+  "buildNumber": 9,
+  "publishedAt": "2026-11-02T11:55:23.450170Z",
+  "notes": "# Lumio 1.0.8（9）\n\n- 合并随机与循环按钮，统一为播放模式菜单，支持顺序播放、列表循环、单曲循环和随机播放。\n- 底部播放条与完整播放页使用一致的模式入口和选中状态，保留随机播放权重规则。\n- 修正列表循环到末尾未回到第一首的问题。\n\nmacOS 保留沙盒，通过 Sparkle 安装并重启；继续采用临时签名，未经 Apple 公证。Android 支持覆盖升级，保留应用数据。\n",
+  "sourceCommit": "1f268f9a2cd6233eeab567855a8668803149171e",
+  "localPreview": false,
+  "packages": [
+    {
+      "platform": "android",
+      "architectures": [
+        "arm64",
+        "armv7",
+        "x86_64"
+      ],
+      "minimumOS": "24",
+      "fileName": "Lumio-1.0.8-9-android-universal.apk",
+      "size": 62846888,
+      "sha256": "3f9f0951e338489bef82ac50505c9452049d67cfad8ebbfb53a6e2576e98d9a1",
+      "url": "https://github.com/hxgJG/Lumio-Releases/releases/download/v1.0.8-9/Lumio-1.0.8-9-android-universal.apk",
+      "certificateSha256": "b0e67f8e408965de26112d8209015db5df340722345eaf39828a80431b1d55ae"
+    },
+    {
+      "platform": "macos",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "minimumOS": "13.0",
+      "fileName": "Lumio-1.0.8-9-macos-universal.zip",
+      "size": 23959673,
+      "sha256": "fa33de251011b56faa8a598c8b1752a18030dacbdc1bdc8ec00df066f79f4d0a",
+      "url": "https://github.com/hxgJG/Lumio-Releases/releases/download/v1.0.8-9/Lumio-1.0.8-9-macos-universal.zip",
+      "sparkleSignature": "KZOBXeiLEPJbTl7ttDb103wL523j8RyyUS3ThlWkZu02HpuE0xLSxr6KNoPvNdthuQu+w5cBjB402zIbI4VwCw=="
+    }
+  ]
+}

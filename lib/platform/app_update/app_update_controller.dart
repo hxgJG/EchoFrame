@@ -19,6 +19,12 @@ enum UpdatePhase {
 }
 
 class AppUpdateController extends ChangeNotifier {
+  AppUpdateController(
+      {UpdateTransport Function(UpdateDiagnostics?)? transportFactory})
+      : _transportFactory = transportFactory ??
+            ((diagnostics) => UpdateTransport(diagnostics: diagnostics));
+
+  final UpdateTransport Function(UpdateDiagnostics?) _transportFactory;
   static const _channel = MethodChannel('lumio/app_update');
   UpdatePhase phase = UpdatePhase.idle;
   Map<String, dynamic>? environment;
@@ -36,8 +42,6 @@ class AppUpdateController extends ChangeNotifier {
   UpdateTransport? _transport;
   bool _disposed = false;
   bool _cancelRequested = false;
-  static DateTime? _checkedAt;
-  static UpdateManifest? _cachedManifest;
   static int _highestBuild = 0;
   bool get busy => [
         UpdatePhase.checking,
@@ -142,54 +146,35 @@ class AppUpdateController extends ChangeNotifier {
 
   Future<void> check() async {
     if (busy) return;
-    if (_checkedAt != null &&
-        DateTime.now().difference(_checkedAt!) < const Duration(seconds: 60)) {
-      phase = UpdatePhase.checking;
-      _emit();
-      try {
-        await loadEnvironment();
-        if (_cachedManifest != null) {
-          _applyManifest(_cachedManifest!);
-          await _refreshRetained();
-        } else {
-          phase = UpdatePhase.idle;
-          message = '刚刚已检查，请在一分钟后重试。';
-        }
-      } on Object catch (e) {
-        phase = UpdatePhase.failed;
-        message = _error(e);
-      }
-      _emit();
-      return;
-    }
     phase = UpdatePhase.checking;
     manifest = null;
     package = null;
     downloaded = null;
     received = 0;
-    _checkedAt = DateTime.now();
-    _cachedManifest = null;
+    message = '正在获取最新发布信息…';
     _emit();
     UpdateTransport? transport;
     try {
       await loadEnvironment();
       await _startDiagnostics('check');
       if (_disposed) return;
-      transport = _transport = UpdateTransport(diagnostics: _diagnostics);
+      transport = _transport = _transportFactory(_diagnostics);
+      final checkId = DateTime.now().microsecondsSinceEpoch.toString();
       final raw = await transport.smallFile(
           Uri.parse(
-              'https://github.com/$releaseRepository/releases/latest/download/update-manifest.json'),
+                  'https://github.com/$releaseRepository/releases/latest/download/update-manifest.json')
+              .replace(queryParameters: {'check': checkId}),
           65536);
       final signature = await transport.smallFile(
           Uri.parse(
-              'https://github.com/$releaseRepository/releases/latest/download/update-manifest.sig'),
+                  'https://github.com/$releaseRepository/releases/latest/download/update-manifest.sig')
+              .replace(queryParameters: {'check': checkId}),
           256);
       final verified = await UpdateManifest.verify(
           raw, utf8.decode(signature), updatePublicKey);
       if (_disposed) return;
       _applyManifest(verified);
       await _refreshRetained();
-      _cachedManifest = verified;
       await _finishDiagnostics('manifestSignatureVerified');
     } on UpdateNotPublished {
       phase = UpdatePhase.idle;
@@ -258,7 +243,7 @@ class AppUpdateController extends ChangeNotifier {
       await _startDiagnostics('download');
       if (_disposed) return;
       if (_cancelRequested) throw UpdateCancelled();
-      transport = _transport = UpdateTransport(diagnostics: _diagnostics);
+      transport = _transport = _transportFactory(_diagnostics);
       file = _cacheFile(selected);
       received = await UpdateTransport.retainedBytes(selected, file);
       if ((environment!['availableBytes'] as num).toInt() <

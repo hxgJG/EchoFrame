@@ -65,7 +65,7 @@ class UpdateTransport {
   }
 
   Future<HttpClientResponse> _open(Uri uri,
-      {int offset = 0, String? etag}) async {
+      {int offset = 0, String? etag, bool revalidate = false}) async {
     final client = _client ??= _makeClient()
       ..connectionTimeout = const Duration(seconds: 20);
     for (var i = 0; i < 6; i++) {
@@ -81,6 +81,11 @@ class UpdateTransport {
       request.followRedirects = false;
       request.headers.set(HttpHeaders.userAgentHeader, 'Lumio-Updates/1');
       request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
+      if (revalidate) {
+        request.headers
+            .set(HttpHeaders.cacheControlHeader, 'no-cache, no-store');
+        request.headers.set(HttpHeaders.pragmaHeader, 'no-cache');
+      }
       if (offset > 0) {
         request.headers.set(HttpHeaders.rangeHeader, 'bytes=$offset-');
         if (etag != null) request.headers.set(HttpHeaders.ifRangeHeader, etag);
@@ -192,7 +197,7 @@ class UpdateTransport {
 
   Future<Uint8List> smallFile(Uri uri, int limit) async {
     try {
-      final response = await _open(uri);
+      final response = await _open(uri, revalidate: true);
       if (response.contentLength > limit)
         throw const FormatException('更新信息过大。');
       final buffer = BytesBuilder(copy: false);
