@@ -95,6 +95,9 @@ class MainActivity : FlutterActivity() {
     private val playbackChannelName = "lumio/playback"
     private val appStatePartitions = listOf("session", "library", "playlists")
     private val permissionRequestCode = 2407
+    private val playbackPermissionRequestCode = 2420
+    private var pendingPlaybackResult: MethodChannel.Result? = null
+    private var pendingPlaybackArguments: Any? = null
     private val fileOperationRequestCode = 2410
     private val lyricsPickerRequestCode = 2411
     private val lyricsExportRequestCode = 2412
@@ -277,6 +280,15 @@ class MainActivity : FlutterActivity() {
         playbackChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "play" -> playMedia(call.arguments, result)
+                "openMediaPermissions" -> {
+                    try {
+                        startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:$packageName")))
+                        result.success(null)
+                    } catch (error: Exception) {
+                        result.error("settingsUnavailable", "无法打开权限设置，请在系统设置中查看 Lumio 的媒体权限。", null)
+                    }
+                }
                 "pause" -> pauseMedia(result)
                 "resume" -> resumeMedia(result)
                 "seek" -> seekMedia(call.arguments, result)
@@ -805,6 +817,9 @@ class MainActivity : FlutterActivity() {
         deviceTransfer?.dispose()
         pendingLyricsExport?.result?.success(mapOf("status" to "cancelled", "message" to "应用已关闭，导出中断。"))
         pendingLyricsExport = null
+        pendingPlaybackResult?.error("playCancelled", "授权过程中播放已取消，请重新播放。", null)
+        pendingPlaybackResult = null
+        pendingPlaybackArguments = null
         pendingFileOperation?.result?.success(
             fileOperationResult("cancelled", "Activity 已关闭，文件操作未完成。"),
         )
@@ -1287,9 +1302,33 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun playMedia(arguments: Any?, result: MethodChannel.Result) {
+    private fun playMedia(arguments: Any?, result: MethodChannel.Result, requestAccess: Boolean = true) {
         val values = arguments as? Map<*, *> ?: emptyMap<String, Any?>()
         val rawItems = values["items"] as? List<*> ?: emptyList<Any?>()
+        val selectedIndex = ((values["currentIndex"] as? Number)?.toInt() ?: 0)
+            .coerceIn(0, (rawItems.size - 1).coerceAtLeast(0))
+        val selected = rawItems.getOrNull(selectedIndex) as? Map<*, *>
+        val selectedKind = selected?.get("kind")?.toString().orEmpty()
+        if (requestAccess && selected != null &&
+            scannedMediaId(selected["mediaId"]?.toString().orEmpty(), selectedKind) != null) {
+            val permission = if (Build.VERSION.SDK_INT >= 33) {
+                if (selectedKind == "video") Manifest.permission.READ_MEDIA_VIDEO else Manifest.permission.READ_MEDIA_AUDIO
+            } else Manifest.permission.READ_EXTERNAL_STORAGE
+            val partialVideoAccess = selectedKind == "video" && Build.VERSION.SDK_INT >= 34 &&
+                checkSelfPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == PackageManager.PERMISSION_GRANTED
+            if (checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED && !partialVideoAccess) {
+                if (pendingPlaybackResult != null) {
+                    result.error("permissionPending", "正在等待媒体访问授权，请先完成系统确认。", null)
+                    return
+                }
+                pendingPlaybackResult = result
+                pendingPlaybackArguments = arguments
+                val permissions = if (selectedKind == "video" && Build.VERSION.SDK_INT >= 34)
+                    arrayOf(permission, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) else arrayOf(permission)
+                requestPermissions(permissions, playbackPermissionRequestCode)
+                return
+            }
+        }
         val mediaItems = rawItems.mapNotNull { raw ->
             val item = raw as? Map<*, *> ?: return@mapNotNull null
             val path = item["path"]?.toString().orEmpty()
@@ -1305,7 +1344,12 @@ class MainActivity : FlutterActivity() {
             }
             Media3MediaItem.Builder()
                 .setMediaId(mediaId)
-                .setUri(mediaUri(path))
+                .setUri(if (Uri.parse(path).scheme == "content") Uri.parse(path)
+                    else scannedMediaId(mediaId, kind)?.let { id ->
+                        val base = if (kind == "video") MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                            else MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                        Uri.withAppendedPath(base, id.toString())
+                    } ?: mediaUri(path))
                 .setMediaMetadata(
                     Media3MediaMetadata.Builder()
                         .setTitle(item["title"]?.toString().orEmpty().ifBlank { "忆光" })
@@ -2002,6 +2046,19 @@ class MainActivity : FlutterActivity() {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == playbackPermissionRequestCode) {
+            val result = pendingPlaybackResult ?: return
+            val arguments = pendingPlaybackArguments
+            pendingPlaybackResult = null
+            pendingPlaybackArguments = null
+            if (grantResults.any { it == PackageManager.PERMISSION_GRANTED }) {
+                playMedia(arguments, result, requestAccess = false)
+            } else {
+                result.error("mediaPermissionDenied",
+                    "媒体访问未获授权。请点击“检查权限”，在系统设置中允许访问所需的音乐或视频后重新播放。", null)
+            }
+            return
+        }
         if (requestCode != permissionRequestCode) {
             return
         }

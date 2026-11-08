@@ -185,8 +185,10 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                         child: ListTile(
                           leading: const Icon(Icons.error_outline_rounded),
                           title: const Text('播放失败'),
-                          subtitle: Text(state.playbackError!,
-                              maxLines: 2, overflow: TextOverflow.ellipsis),
+                          subtitle: Text(
+                              _playbackFailureSummary(state.playbackError!),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -937,7 +939,7 @@ class _VideoPlaybackError extends StatelessWidget {
                   style: TextStyle(
                       color: Colors.white, fontWeight: FontWeight.bold)),
               const SizedBox(height: 6),
-              Text(message,
+              Text(_playbackFailureSummary(message),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
@@ -945,6 +947,12 @@ class _VideoPlaybackError extends StatelessWidget {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (_isMediaPermissionError(message))
+                    TextButton(
+                      onPressed: () => _openMediaPermissions(context),
+                      child: const Text('检查权限',
+                          style: TextStyle(color: Colors.white)),
+                    ),
                   TextButton(
                       onPressed: () => state.play(item),
                       child: const Text('重新播放',
@@ -965,6 +973,29 @@ class _VideoPlaybackError extends StatelessWidget {
   }
 }
 
+bool _isMediaPermissionError(String message) =>
+    defaultTargetPlatform == TargetPlatform.android &&
+    RegExp(r'IO_NO_PERMISSION|EACCES|SecurityException|mediaPermissionDenied|媒体访问未获授权',
+            caseSensitive: false)
+        .hasMatch(message);
+
+String _playbackFailureSummary(String message) =>
+    _isMediaPermissionError(message)
+        ? '无法读取此媒体，请检查访问权限；若仅允许部分视频，请将此视频加入授权范围。'
+        : message;
+
+Future<void> _openMediaPermissions(BuildContext context) async {
+  try {
+    await const MethodChannel('lumio/playback')
+        .invokeMethod<void>('openMediaPermissions');
+  } on Object {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('请在系统设置 → 应用 → Lumio → 权限中允许访问所需媒体，然后返回重新播放。')));
+    }
+  }
+}
+
 Future<void> _showPlaybackError(
     BuildContext context, String message, String title) {
   return showDialog<void>(
@@ -973,6 +1004,10 @@ Future<void> _showPlaybackError(
       title: Text(title),
       content: SingleChildScrollView(child: SelectableText(message)),
       actions: [
+        if (_isMediaPermissionError(message))
+          TextButton(
+              onPressed: () => _openMediaPermissions(context),
+              child: const Text('检查权限')),
         TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('关闭')),
