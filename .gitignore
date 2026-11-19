@@ -49,6 +49,7 @@ app.*.map.json
 
 # Android/Gradle generated state
 **/.gradle/
+**/.kotlin/
 
 # HarmonyOS/DevEco generated state
 **/.hvigor/

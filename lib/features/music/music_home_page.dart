@@ -347,8 +347,7 @@ class _SuggestionCard extends StatelessWidget {
                         MediaKind.audio,
                         context,
                       ),
-                      foregroundColor:
-                          LumioTheme.onMediaColor(context),
+                      foregroundColor: LumioTheme.onMediaColor(context),
                     ),
                     onPressed: onPlay,
                     icon: const Icon(Icons.play_arrow_rounded),

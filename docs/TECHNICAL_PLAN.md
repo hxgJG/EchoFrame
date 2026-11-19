@@ -1,6 +1,8 @@
 # 忆光 Lumio 技术方案
 
 > 基于 `docs/Lumio_PRD_v0.5.md` v0.5 整理。本文作为产品需求到工程实现的主技术文档，后续阶段计划见 `docs/superpowers/plans/2026-06-25-lumio-mvp.md`。
+>
+> 功能完成度、平台差异与遗留问题以 [`FEATURE_STATUS.md`](./FEATURE_STATUS.md) 为准；本文的阶段描述可能落后于代码，修改实现前先核对状态矩阵。
 
 ## 1. 背景与目标
 
