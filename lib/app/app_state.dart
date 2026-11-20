@@ -29,6 +29,7 @@ import '../platform/device_transfer/platform_transfer_storage.dart';
 import '../platform/device_transfer/received_transfer_store.dart';
 import '../platform/device_transfer/shared_resource_reader.dart';
 import '../platform/device_transfer/transfer_identity.dart';
+import '../platform/media_library/artwork_loader.dart';
 import '../platform/media_library/lyric_package_repository.dart';
 import '../platform/media_library/lyrics_export_result.dart';
 import '../platform/media_library/lyrics_import.dart';

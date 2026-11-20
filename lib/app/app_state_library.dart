@@ -188,6 +188,8 @@ extension MediaLibraryState on LumioAppState {
       result,
       emptyCompletedMessage: '没有找到或导入符合条件的本地媒体。',
     );
+    // 重新扫描后封面可能与旧缓存不一致，清掉内存与磁盘缓存避免长期显示旧图。
+    unawaited(clearArtworkCache(disk: true));
     _isScanningLibrary = false;
     _saveState(
       partitions: const <AppStoragePartition>{

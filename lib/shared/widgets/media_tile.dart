@@ -1,11 +1,9 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/theme.dart';
 import '../../core/models/media_item.dart';
-import '../../platform/media_library/artwork_memory_cache.dart';
+import '../../platform/media_library/artwork_loader.dart';
 
 class MediaArtwork extends StatelessWidget {
   const MediaArtwork({
@@ -18,42 +16,6 @@ class MediaArtwork extends StatelessWidget {
   final MediaItem item;
   final double size;
   final IconData? icon;
-
-  static const MethodChannel _mediaLibraryChannel = MethodChannel(
-    'lumio/media_library',
-  );
-  static final ArtworkMemoryCache _artworkCache = ArtworkMemoryCache(
-    _loadArtwork,
-  );
-
-  static Future<Uint8List?> _loadArtwork(String cacheKey) async {
-    final parts = cacheKey.split('|');
-    if (parts.length < 2 || parts[0].isEmpty || parts[1].isEmpty) {
-      return null;
-    }
-    try {
-      final embedded = await _mediaLibraryChannel.invokeMethod<Uint8List>(
-        'loadArtwork',
-        <String, Object?>{
-          'kind': parts[0],
-          'mediaId': parts[1],
-        },
-      );
-      if (embedded != null && embedded.isNotEmpty) {
-        return embedded;
-      }
-    } on MissingPluginException {
-    } on PlatformException {}
-    if (parts.length < 3 || parts[2].isEmpty) {
-      return null;
-    }
-    try {
-      final file = File(Uri.decodeComponent(parts[2]));
-      return await file.exists() ? file.readAsBytes() : null;
-    } on FileSystemException {
-      return null;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -74,10 +36,11 @@ class MediaArtwork extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: FutureBuilder<Uint8List?>(
-        future: _artworkCache.load(
-          '${item.kind.name}|${item.id}|'
-          '${Uri.encodeComponent(item.artworkPath ?? '')}',
-        ),
+        future: artworkCache.load(artworkCacheKeyFor(
+          kind: item.kind.name,
+          mediaId: item.id,
+          artworkPath: item.artworkPath,
+        )),
         builder: (context, snapshot) {
           final bytes = snapshot.data;
           if (bytes == null || bytes.isEmpty) {
