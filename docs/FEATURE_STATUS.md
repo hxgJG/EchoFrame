@@ -7,15 +7,16 @@
 
 ## 1. 当前结论
 
-当前产品处于“Android 可发布 + macOS 可自更新 + HarmonyOS 可构建 spike + iOS 骨架”阶段。
+当前产品处于“Android 可发布 + macOS 可自更新 + iOS 主链路可用 + HarmonyOS 可构建 spike”阶段。
 Android 的媒体浏览、播放列表、音视频播放、搜索、续播、本地歌词/字幕、播放速度、
 睡眠定时器、AB 循环、均衡器、自动 PiP、封面/首帧懒加载和批量分享等主链路已经可用；
 1.0.10（11）起扫描结果统一以 MediaStore URI 播放，并在播放前校验媒体授权。
 应用状态已按会话、媒体库、播放列表分区持久化，Android 使用 MMKV，HarmonyOS 使用系统
 Preferences，macOS 使用应用支持目录下的分区 JSON，避免数据库和高频完整媒体库写入。
 macOS 自 1.0.7（8）起保留 App Sandbox 并通过 Sparkle 应用内安装更新，但仍为临时签名、
-未经 Apple 公证。iOS 仍是工程骨架；HarmonyOS 已有导入、播放和持久化桥接，并已完成
-真机启动与首页渲染验证，但仍缺少完整播放回归与后台/锁屏能力。
+未经 Apple 公证。iOS 已具备导入、扫描、封面与音视频播放主链路，但尚无后台/锁屏媒体控制与 PiP；
+HarmonyOS 已有导入、播放和持久化桥接，并已完成真机启动与首页渲染验证，
+但仍缺少完整播放回归与后台/锁屏能力。
 
 ## 2. 功能矩阵
 
@@ -49,7 +50,7 @@ macOS 自 1.0.7（8）起保留 App Sandbox 并通过 Sparkle 应用内安装更
 | Widget | 主屏幕播放小组件 | ⬜ | 无 | Android/iOS/HarmonyOS 分平台实现 |
 | 多语言 | 中文/英文切换 | ⬜ | 当前界面文本以中文硬编码 | 引入 Flutter l10n 并迁移文案 |
 | 无障碍 | 字体缩放、TalkBack 基本可用 | 🟡 | 大量使用标准 Material 控件 | 补语义标签并做 TalkBack/大字体验收 |
-| iOS | 导入、索引、音视频、后台、PiP | ⬜ | 仅 Flutter/iOS 工程骨架 | 完整平台实现 |
+| iOS | 导入、索引、音视频、后台、PiP | 🟡 | 文档选择器主动导入、AVAsset 元数据扫描、内嵌封面与视频首帧、AVPlayer + FlutterTexture 播放、分区状态持久化 | 后台与锁屏媒体控制、PiP、文件改名/移动/标签、均衡器与淡入淡出、真机回归 |
 | macOS 工程 | Runner、Sandbox、Debug/Release、universal | ✅ | macOS 13 Runner 已生成；Debug 构建和 universal Release 产物已验证，Release/Profile 启用 Hardened Runtime；1.0.7 起在沙盒内通过 Sparkle 应用内安装 | Developer ID 签名、公证与 Gatekeeper 验收 |
 | macOS 媒体库 | 文件夹授权、持久来源、扫描、元数据、封面、歌词/字幕 | 🟡 | NSOpenPanel、security-scoped bookmark、来源管理、AVAsset 扫描和快照已接入 | 真实媒体矩阵、跨重启授权和千级媒体性能验收 |
 | macOS 播放 | AVPlayer、Texture、系统媒体控制、分享 | 🟡 | 音视频播放桥接、FlutterTexture、Now Playing/Remote Command 和分享已接入 | 真媒体长播、seek/切换、视频缩放和媒体键验收 |

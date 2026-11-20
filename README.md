@@ -11,7 +11,7 @@
 | Android | ✅ 主发布平台 | MediaStore 扫描、Media3 1.10.1 后台服务播放、PiP、均衡器、Crossfade、MP3 标签写回、批量分享、应用内更新 | 增量扫描、真机格式矩阵回归 |
 | macOS | 🟡 可用 | AVPlayer + FlutterTexture、沙盒书签授权、字幕工作台（编辑/校准/烧录导出）、桌面歌词、WebDAV 备份、Sparkle 应用内更新 | 临时签名未公证、桌面右键/多选、真实媒体矩阵验收 |
 | HarmonyOS | 🟡 可用 spike | 主动导入、AVPlayer/Texture 播放、Preferences 分区持久化、签名 HAP | 备份/互传/更新/封面、后台与锁屏、PiP |
-| iOS | ⬜ 工程骨架 | 仅有 Flutter 工程与 `AppDelegate` | 全部平台实现 |
+| iOS | 🟡 可用 | 文档选择器主动导入、AVAsset 扫描、内嵌封面/首帧、AVPlayer + FlutterTexture 播放、分区状态持久化 | 后台与锁屏媒体控制、PiP、文件操作、真机回归 |
 
 功能状态的完整矩阵、决策记录和遗留问题见 [docs/FEATURE_STATUS.md](docs/FEATURE_STATUS.md)。
 
@@ -51,7 +51,7 @@ lib/
 android/  Kotlin：MediaStore 扫描、Media3 播放服务、互传/备份/更新插件
 macos/    Swift：媒体库、播放、字幕工作台、桌面歌词、Sparkle 更新
 ohos/     ArkTS：导入、播放、持久化
-ios/      仅工程骨架
+ios/      Swift：应用状态存储、媒体导入与扫描、AVPlayer 播放
 
 test/     单元与集成测试；tool/ 发版与诊断脚本；docs/ 设计与状态文档
 ```
