@@ -69,12 +69,13 @@ class PlatformMediaLibraryRepository implements MediaLibraryRepository {
 
   bool get _isSupportedPlatform =>
       Platform.isAndroid ||
+      Platform.isIOS ||
       Platform.isMacOS ||
       Platform.operatingSystem == 'ohos';
 
   @override
   Future<List<MediaSource>> addSources() async {
-    if (!Platform.isMacOS) {
+    if (!Platform.isMacOS && !Platform.isIOS) {
       return const <MediaSource>[];
     }
     try {
@@ -89,14 +90,14 @@ class PlatformMediaLibraryRepository implements MediaLibraryRepository {
 
   @override
   Future<List<MediaSource>> addVideoSources() async {
-    if (!Platform.isMacOS) return const [];
+    if (!Platform.isMacOS && !Platform.isIOS) return const [];
     final raw = await _channel.invokeListMethod<Object?>('addVideoSources');
     return _parseSources(raw);
   }
 
   @override
   Future<List<MediaSource>> listSources() async {
-    if (!Platform.isMacOS) {
+    if (!Platform.isMacOS && !Platform.isIOS) {
       return const <MediaSource>[];
     }
     try {
