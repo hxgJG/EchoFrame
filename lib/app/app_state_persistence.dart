@@ -117,6 +117,10 @@ extension PersistenceState on LumioAppState {
     _queueIds = _asStringList(json['queueIds'])
         .where(validMediaIds.contains)
         .toList(growable: false);
+    _recentSearches = _asStringList(json['recentSearches'])
+        .where((query) => query.trim().isNotEmpty)
+        .take(LumioAppState.maxRecentSearches)
+        .toList(growable: false);
     final settings = json['settings'];
     if (settings is Map<Object?, Object?>) {
       _settings = LumioSettings.fromJson(settings.cast<String, Object?>());
@@ -241,6 +245,7 @@ extension PersistenceState on LumioAppState {
     if (partitions.contains(AppStoragePartition.session)) {
       snapshot.addAll(<String, Object?>{
         'queueIds': _queueIds,
+        'recentSearches': _recentSearches,
         'hiddenMediaIds': _hiddenMediaIds.toList(growable: false),
         'settings': _settings.toJson(),
         'currentItemId': _currentItem?.id,

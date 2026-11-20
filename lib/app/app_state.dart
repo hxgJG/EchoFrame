@@ -133,6 +133,7 @@ class LumioAppState extends ChangeNotifier {
   List<MediaItem> _videoItems;
   List<Playlist> _playlists;
   List<String> _queueIds = const <String>[];
+  List<String> _recentSearches = const <String>[];
   Set<String> _hiddenMediaIds = <String>{};
   LumioSettings _settings = const LumioSettings();
   AppSection _section = AppSection.home;
@@ -150,6 +151,9 @@ class LumioAppState extends ChangeNotifier {
   // 避免为了 10Hz 刷新而每秒十次往返平台通道。
   DateTime? _positionSampledAt;
   static const Duration _maxInterpolation = Duration(seconds: 2);
+
+  /// 搜索历史保留条数。只记用户真正用过的词，不记录每次输入的中间状态。
+  static const int maxRecentSearches = 8;
   static const Duration _desktopLyricsProgressInterval =
       Duration(milliseconds: 250);
   String? _desktopLyricsContentKey;

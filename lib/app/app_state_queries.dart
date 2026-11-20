@@ -122,4 +122,43 @@ extension MediaQueryState on LumioAppState {
       _currentItem = updated;
     }
   }
+
+  List<String> get recentSearches => List<String>.unmodifiable(_recentSearches);
+
+  /// 记录一次实际使用的搜索词：去重（忽略大小写与首尾空格）、最新的排最前。
+  void recordSearch(String query) {
+    final value = query.trim();
+    if (value.isEmpty || value.length > 80) return;
+    final normalized = value.toLowerCase();
+    // 已经在首位时不必重排，也避免每次搜索都写一次状态。
+    if (_recentSearches.isNotEmpty &&
+        _recentSearches.first.toLowerCase() == normalized) {
+      return;
+    }
+    _recentSearches = <String>[
+      value,
+      ..._recentSearches.where((item) => item.toLowerCase() != normalized),
+    ].take(LumioAppState.maxRecentSearches).toList(growable: false);
+    _saveState();
+    _notify();
+  }
+
+  void removeRecentSearch(String query) {
+    final normalized = query.toLowerCase();
+    if (!_recentSearches.any((item) => item.toLowerCase() == normalized)) {
+      return;
+    }
+    _recentSearches = _recentSearches
+        .where((item) => item.toLowerCase() != normalized)
+        .toList(growable: false);
+    _saveState();
+    _notify();
+  }
+
+  void clearRecentSearches() {
+    if (_recentSearches.isEmpty) return;
+    _recentSearches = const <String>[];
+    _saveState();
+    _notify();
+  }
 }

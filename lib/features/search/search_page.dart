@@ -25,9 +25,15 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: widget.state,
+        builder: (context, _) => _build(context),
+      );
+
+  Widget _build(BuildContext context) {
+    final state = widget.state;
     final query = _controller.text;
-    final results = widget.state.search(query);
+    final results = state.search(query);
     return Scaffold(
       appBar: AppBar(title: const Text('搜索')),
       body: ListView(
@@ -58,13 +64,27 @@ class _SearchPageState extends State<SearchPage> {
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 16),
-          if (query.trim().isEmpty)
+          if (query.trim().isEmpty) ...<Widget>[
+            if (state.recentSearches.isNotEmpty)
+              _RecentSearches(
+                values: state.recentSearches,
+                onSelected: (value) {
+                  _controller.text = value;
+                  _controller.selection =
+                      TextSelection.collapsed(offset: _controller.text.length);
+                  state.recordSearch(value);
+                  setState(() {});
+                },
+                onRemove: state.removeRecentSearch,
+                onClear: state.clearRecentSearches,
+              ),
+            if (state.recentSearches.isNotEmpty) const SizedBox(height: 16),
             const _SearchEmpty(
               icon: Icons.manage_search_rounded,
               title: '输入关键词开始本地搜索',
               message: '搜索只读取本机媒体索引，不需要网络。',
-            )
-          else if (results.isEmpty)
+            ),
+          ] else if (results.isEmpty)
             const _SearchEmpty(
               icon: Icons.search_off_rounded,
               title: '没有找到匹配内容',
@@ -74,7 +94,10 @@ class _SearchPageState extends State<SearchPage> {
             ...results.map(
               (item) => MediaTile(
                 item: item,
-                onTap: () => selectAudioItem(context, widget.state, item),
+                onTap: () {
+                  state.recordSearch(query);
+                  selectAudioItem(context, state, item);
+                },
                 trailing: Icon(
                   item.kind == MediaKind.audio
                       ? Icons.music_note_rounded
@@ -130,6 +153,54 @@ class _SearchEmpty extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 搜索历史：点按直接复用，右侧可单条删除，也可整体清空。
+class _RecentSearches extends StatelessWidget {
+  const _RecentSearches({
+    required this.values,
+    required this.onSelected,
+    required this.onRemove,
+    required this.onClear,
+  });
+
+  final List<String> values;
+  final ValueChanged<String> onSelected;
+  final ValueChanged<String> onRemove;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child:
+                  Text('最近搜索', style: Theme.of(context).textTheme.titleMedium),
+            ),
+            TextButton(onPressed: onClear, child: const Text('清空')),
+          ],
+        ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: values
+              .map((value) => InputChip(
+                    label: Text(value),
+                    avatar: Icon(Icons.history_rounded,
+                        size: 18, color: scheme.onSurfaceVariant),
+                    onPressed: () => onSelected(value),
+                    onDeleted: () => onRemove(value),
+                    deleteButtonTooltipMessage: '删除这条记录',
+                  ))
+              .toList(growable: false),
+        ),
+      ],
     );
   }
 }
