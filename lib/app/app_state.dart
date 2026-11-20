@@ -222,6 +222,9 @@ class LumioAppState extends ChangeNotifier {
   List<_SearchEntry>? _searchIndex;
   List<MediaItem>? _searchIndexAudio;
   List<MediaItem>? _searchIndexVideo;
+  String? _searchCacheQuery;
+  List<_SearchEntry>? _searchCacheIndex;
+  List<MediaItem>? _searchCacheResult;
   // 按 id 的索引，同样在媒体库整块替换后重建。
   Map<String, MediaItem>? _mediaByIdCache;
   List<MediaItem>? _mediaByIdAudio;

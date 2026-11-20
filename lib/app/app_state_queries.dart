@@ -33,10 +33,19 @@ extension MediaQueryState on LumioAppState {
       _searchIndexAudio = _audioItems;
       _searchIndexVideo = _videoItems;
     }
-    return <MediaItem>[
+    // 界面在每次重建时都会重新取结果，同一关键词配合同一版媒体库时直接复用。
+    if (normalized == _searchCacheQuery &&
+        identical(_searchCacheIndex, index)) {
+      return _searchCacheResult!;
+    }
+    final result = <MediaItem>[
       for (final entry in index)
         if (entry.text.contains(normalized)) entry.item,
     ];
+    _searchCacheQuery = normalized;
+    _searchCacheIndex = index;
+    _searchCacheResult = result;
+    return result;
   }
 
   bool _canReorder(List<Object?> items, int oldIndex, int newIndex) {
