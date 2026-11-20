@@ -5,6 +5,7 @@ import 'package:lumio/core/backup/portable_backup_format.dart';
 import 'package:lumio/core/models/lumio_settings.dart';
 import 'package:lumio/core/models/media_item.dart';
 import 'package:lumio/platform/app_storage/app_storage_repository.dart';
+import 'package:lumio/platform/media_library/lyric_package_repository.dart';
 import 'package:lumio/platform/media_library/media_library_repository.dart';
 import 'package:lumio/platform/media_library/platform_media_library_repository.dart';
 
@@ -133,7 +134,11 @@ void main() {
     expect(app.isPlaying, false);
   });
 
-  test('先恢复跨端数据、后添加原文件，恢复歌曲信息与全部引用', () async {
+  // 这条用例验证「按文件内容指纹跨端关联」，依赖 Android/macOS 才有的指纹通道；
+  // Linux 等平台指纹为空，只能退化为元数据匹配，因此按平台跳过。
+  test('先恢复跨端数据、后添加原文件，恢复歌曲信息与全部引用',
+      skip: !LyricPackageRepository.supported ? '当前平台没有媒体指纹通道' : false,
+      () async {
     app.dispose();
     final old = (storage.data['audioItems'] as List).single as Map;
     old['durationMs'] = 240000;
