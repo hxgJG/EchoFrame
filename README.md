@@ -10,7 +10,7 @@
 |---|---|---|---|
 | Android | ✅ 主发布平台 | MediaStore 扫描、Media3 1.10.1 后台服务播放、PiP、均衡器、Crossfade、MP3 标签写回、批量分享、应用内更新 | 增量扫描、真机格式矩阵回归 |
 | macOS | 🟡 可用 | AVPlayer + FlutterTexture、沙盒书签授权、字幕工作台（编辑/校准/烧录导出）、桌面歌词、WebDAV 备份、Sparkle 应用内更新 | 临时签名未公证、桌面右键/多选、真实媒体矩阵验收 |
-| HarmonyOS | 🟡 可用 spike | 主动导入、AVPlayer/Texture 播放、Preferences 分区持久化、签名 HAP | 备份/互传/更新/封面、后台与锁屏、PiP |
+| HarmonyOS | ⏸ 暂停 | 主动导入、AVPlayer/Texture 播放、Preferences 分区持久化、签名 HAP | 暂停原因：开发机缺少 DevEco Studio / HarmonyOS SDK，改动无法编译验证；恢复前需先补齐工具链 |
 | iOS | 🟡 可用 | 文档选择器主动导入、AVAsset 扫描、内嵌封面/首帧、AVPlayer + FlutterTexture 播放、分区状态持久化 | 后台与锁屏媒体控制、PiP、文件操作、真机回归 |
 
 功能状态的完整矩阵、决策记录和遗留问题见 [docs/FEATURE_STATUS.md](docs/FEATURE_STATUS.md)。
@@ -135,6 +135,7 @@ CI 定义在 [.github/workflows/ci.yml](.github/workflows/ci.yml)：格式检查
 | [docs/DEVICE_TRANSFER_SAFETY_CODE_PLAN.md](docs/DEVICE_TRANSFER_SAFETY_CODE_PLAN.md) | 设备互传与固定安全码 |
 | [docs/APP_UPDATE_PLAN.md](docs/APP_UPDATE_PLAN.md) | 发布、检查更新与安装边界 |
 | [docs/SUBTITLE_WORKBENCH_GUIDE.md](docs/SUBTITLE_WORKBENCH_GUIDE.md) | macOS 字幕工作台 |
+| [docs/IOS_SMOKE_TEST.md](docs/IOS_SMOKE_TEST.md) | iOS 冒烟清单与已知未实现项 |
 | [docs/BRAND_GUIDE.md](docs/BRAND_GUIDE.md) / [docs/THEMING.md](docs/THEMING.md) | 品牌与主题 |
 
 ## 开发约定
