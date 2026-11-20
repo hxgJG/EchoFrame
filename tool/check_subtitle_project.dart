@@ -44,7 +44,7 @@ void main() {
   });
   check(ass.cues.single.startMs == 1200 && ass.cues.single.text == '你好\nworld',
       'ASS 时间与换行');
-  final text = '1\n00:00:00,000 --> 00:00:01,000\n中文';
+  const text = '1\n00:00:00,000 --> 00:00:01,000\n中文';
   final utf16 = <int>[
     255,
     254,

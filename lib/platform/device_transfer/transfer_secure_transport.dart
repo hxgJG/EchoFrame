@@ -522,6 +522,8 @@ class TransferSecureClient implements TransferDownloadSource {
       required Future<bool> Function(TransferRemoteDevice) confirm,
       TransferDeviceInfo deviceInfo = const TransferDeviceInfo(),
       void Function()? onDisconnected}) async {
+    // 该 socket 交给 _Wire 持有，由它统一 destroy 并取消订阅。
+    // ignore: close_sinks
     final socket = await SecureSocket.connect(endpoint.address, endpoint.port,
         context: SecurityContext(withTrustedRoots: false)
           ..minimumTlsProtocolVersion = TlsProtocolVersion.tls1_2,

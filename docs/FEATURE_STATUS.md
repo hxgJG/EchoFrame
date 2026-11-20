@@ -156,6 +156,7 @@ macOS 自 1.0.7（8）起保留 App Sandbox 并通过 Sparkle 应用内安装更
 | `_findItem`/`_itemsForIds`/`itemsForPlaylist` 每次都先拼出音频+视频全量列表再线性扫描 | 歌单页对每个歌单卡片查一次，50 个歌单 × 1 万条媒体时每次重建约 12ms | 建立按 id 的媒体索引并按源列表身份缓存，查找降为 O(1) |
 | 搜索每次按键为全部媒体重新拼接并转小写检索文本 | 万级媒体库下每次按键约 1.9ms，输入有轻微延迟 | 建立按媒体库版本缓存的检索索引，只在媒体库变化时重建 |
 | 缺少异步相关 lint | 存在「await 之后使用 BuildContext」和未显式处理的 Future 各一处 | 修复两处并启用 `use_build_context_synchronously`、`unawaited_futures` |
+| lint 基线过窄，仅十余条自定义规则 | 资源泄漏（未取消的订阅、未关闭的 Sink）和常量、集合类型等常见问题无检查 | 逐条试算违规数后按成本引入 12 条规则，全部违规已在本次清零 |
 | UI 层直接用 `Platform.isX` 判断功能是否有入口 | 与 `PlatformCapabilities` 模型并存，新增平台时容易漏改 | 新增 `supportsPortableBackup`/`supportsDeviceTransfer`/`supportsAppUpdate`，设置页与应用更新页改读能力模型 |
 
 实测（同一进程内对比，1 万条音频）：
@@ -173,7 +174,8 @@ macOS 自 1.0.7（8）起保留 App Sandbox 并通过 Sparkle 应用内安装更
 |---|---|---|
 | `LumioAppState` 单类约 3000 行，承载播放、媒体库、歌词、备份、互传全部状态 | UI 全部监听同一个 `ChangeNotifier`，播放进度每次更新都会重建整棵树 | 按域拆分 controller，并让页面只订阅所需部分 |
 | 歌词高亮以 100ms 轮询平台通道取进度 | 播放且歌词可见时约 10 次/秒通道往返 | 与 700ms 位置轮询合并，或在两次真实采样之间本地插值 |
-| 未引入 `flutter_lints` 完整基线 | 仅启用项目自定义的十余条规则；试探完整基线约 2100 处，`prefer_final_parameters` 一项就占多数 | 分批引入高价值规则，先看单项违规数再决定 |
+| 未引入 `flutter_lints` 完整基线 | 已按单项违规数分批引入 12 条；仍有 `directives_ordering`（57 处）、`avoid_redundant_argument_values`（17 处）等纯风格规则未启用 | 需要时按同样方式逐条评估，不整体引入 |
+| `unnecessary_null_checks` 未启用 | 现有 1 处 `invokeMapMethod(...)!` 去掉 `!` 会把「读取失败」从显式报错变成静默为空 | 保留当前写法与报错行为 |
 | 搜索仍为 O(n) 线性扫描 | 已缓存检索文本，但每次按键仍遍历全部媒体 | 需要时可加输入防抖，或改前缀索引 |
 | 未启用 `avoid_slow_async_io` | 该规则主张把 `File.exists` 等异步调用改为同步版本，会阻塞 UI isolate，与本项目界面线程要求冲突（现有 36 处均为异步调用） | 不建议引入 |
 | 界面文案全部硬编码中文 | 无法切换语言 | 引入 Flutter l10n 后统一迁移 |

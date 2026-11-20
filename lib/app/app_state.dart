@@ -275,8 +275,8 @@ class LumioAppState extends ChangeNotifier {
   Duration get position => _position;
   bool get isScanningLibrary => _isScanningLibrary;
   bool get isExportingLyrics => _isExportingLyrics;
-  int get exportableLyricsCount =>
-      _audioItems.where(_hasExportableLyrics).length;
+  // 与音频库索引一起统计，避免每次重建都遍历全部媒体的歌词。
+  int get exportableLyricsCount => _audioIndex.exportableLyricCount;
 
   bool _hasExportableLyrics(MediaItem item) =>
       item.kind == MediaKind.audio &&
@@ -3080,7 +3080,8 @@ class LumioAppState extends ChangeNotifier {
 class _AudioIndex {
   _AudioIndex._(
     this.recentlyAdded,
-    this.mostPlayed, {
+    this.mostPlayed,
+    this.exportableLyricCount, {
     required Map<String, List<MediaItem>> byAlbum,
     required Map<String, List<MediaItem>> byArtist,
     required Map<String, List<MediaItem>> byFolder,
@@ -3096,6 +3097,7 @@ class _AudioIndex {
         List<MediaItem>.unmodifiable(
           (List<MediaItem>.from(items)..sort(compare)).take(4),
         );
+    var exportableLyricCount = 0;
     final byAlbum = <String, List<MediaItem>>{};
     final byArtist = <String, List<MediaItem>>{};
     final byFolder = <String, List<MediaItem>>{};
@@ -3103,6 +3105,10 @@ class _AudioIndex {
       (byAlbum[item.album] ??= <MediaItem>[]).add(item);
       (byArtist[item.artist] ??= <MediaItem>[]).add(item);
       (byFolder[item.folder] ??= <MediaItem>[]).add(item);
+      if (item.kind == MediaKind.audio &&
+          item.lyrics.any((line) => line.text.trim().isNotEmpty)) {
+        exportableLyricCount++;
+      }
     }
     // 分组结果会被界面长期持有，转成不可变副本，避免调用方就地修改污染缓存。
     for (final group in <Map<String, List<MediaItem>>>[
@@ -3117,6 +3123,7 @@ class _AudioIndex {
     return _AudioIndex._(
       top((a, b) => b.addedAt.compareTo(a.addedAt)),
       top((a, b) => b.playCount.compareTo(a.playCount)),
+      exportableLyricCount,
       byAlbum: byAlbum,
       byArtist: byArtist,
       byFolder: byFolder,
@@ -3125,6 +3132,7 @@ class _AudioIndex {
 
   final List<MediaItem> recentlyAdded;
   final List<MediaItem> mostPlayed;
+  final int exportableLyricCount;
   final List<String> albums;
   final List<String> artists;
   final List<String> folders;
