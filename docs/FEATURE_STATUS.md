@@ -152,10 +152,18 @@ macOS 自 1.0.7（8）起保留 App Sandbox 并通过 Sparkle 应用内安装更
 | `audioItems` 每次访问都复制列表并全量排序，`videoItems`/`playlists` 每次访问都重建不可变副本 | 播放中每 700ms 重建一次界面，万级媒体库时每次重建约 2ms 全部消耗在重新排序上 | 按「源列表身份 + 排序方式」缓存；新增 `audioCount`/`videoCount`，只取数量的位置不再触发排序 |
 | `albums`/`artists`/`audioFolders`/`recentlyAdded`/`mostPlayed` 每次访问全量扫描并排序 | 专辑网格在 `itemBuilder` 里取 `state.albums[index]`，每个格子都重算整份专辑集合 | 合并为 `_AudioIndex` 一次构建并按源列表身份缓存；专辑网格把聚合结果提到 `build` 外 |
 | `queueItems` 每次访问都对全部媒体建索引表 | 播放列表页每次重建重复建表 | 按队列与媒体列表身份缓存 |
+| `itemsForAlbum`/`itemsForArtist`/`itemsForAudioFolder` 每次调用全量扫描 | 专辑与艺术家网格每张卡片查询一次，全屏滚动退化为 O(卡片数 × 媒体数) | 在 `_AudioIndex` 中一并建立分组映射，结果转为不可变副本 |
+| 搜索每次按键为全部媒体重新拼接并转小写检索文本 | 万级媒体库下每次按键约 1.9ms，输入有轻微延迟 | 建立按媒体库版本缓存的检索索引，只在媒体库变化时重建 |
 | 缺少异步相关 lint | 存在「await 之后使用 BuildContext」和未显式处理的 Future 各一处 | 修复两处并启用 `use_build_context_synchronously`、`unawaited_futures` |
 | UI 层直接用 `Platform.isX` 判断功能是否有入口 | 与 `PlatformCapabilities` 模型并存，新增平台时容易漏改 | 新增 `supportsPortableBackup`/`supportsDeviceTransfer`/`supportsAppUpdate`，设置页与应用更新页改读能力模型 |
 
-实测（100 次界面重建、1 万条音频、同一进程内对比）：优化前 202 ms，优化后 0.13 ms。
+实测（同一进程内对比，1 万条音频）：
+
+| 场景 | 优化前 | 优化后 |
+|---|---|---|
+| 100 次界面重建读取全部派生视图 | 202 ms | 0.13 ms |
+| 1000 次专辑卡片查询 | 90 ms | 0.11 ms |
+| 10 次按键搜索 | 18.8 ms | 5.3 ms |
 
 ### 8.2 仍未处理
 
@@ -163,7 +171,8 @@ macOS 自 1.0.7（8）起保留 App Sandbox 并通过 Sparkle 应用内安装更
 |---|---|---|
 | `LumioAppState` 单类约 3000 行，承载播放、媒体库、歌词、备份、互传全部状态 | UI 全部监听同一个 `ChangeNotifier`，播放进度每次更新都会重建整棵树 | 按域拆分 controller，并让页面只订阅所需部分 |
 | 歌词高亮以 100ms 轮询平台通道取进度 | 播放且歌词可见时约 10 次/秒通道往返 | 与 700ms 位置轮询合并，或在两次真实采样之间本地插值 |
-| 未引入 `flutter_lints` 完整基线 | 仅启用项目自定义的十余条规则；试算 `avoid_slow_async_io` 会新增 36 处、完整基线约 2100 处 | 分批引入，先修同步 IO 再逐步放宽 |
-| 搜索每次按键重建关键词文本并全量扫描 | 万级媒体库下每次按键约数千次字符串拼接与转小写 | 建立按媒体库版本缓存的检索索引，或加输入防抖 |
+| 未引入 `flutter_lints` 完整基线 | 仅启用项目自定义的十余条规则；试探完整基线约 2100 处，`prefer_final_parameters` 一项就占多数 | 分批引入高价值规则，先看单项违规数再决定 |
+| 搜索仍为 O(n) 线性扫描 | 已缓存检索文本，但每次按键仍遍历全部媒体 | 需要时可加输入防抖，或改前缀索引 |
+| 未启用 `avoid_slow_async_io` | 该规则主张把 `File.exists` 等异步调用改为同步版本，会阻塞 UI isolate，与本项目界面线程要求冲突（现有 36 处均为异步调用） | 不建议引入 |
 | 界面文案全部硬编码中文 | 无法切换语言 | 引入 Flutter l10n 后统一迁移 |
 | iOS 无平台实现、HarmonyOS 缺备份/互传/更新/封面 | 见第 2 节矩阵 | 按产品优先级排期 |

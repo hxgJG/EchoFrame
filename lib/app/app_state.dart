@@ -752,17 +752,16 @@ class LumioAppState extends ChangeNotifier {
     return values;
   }
 
-  List<MediaItem> itemsForAlbum(String album) {
-    return _audioItems.where((item) => item.album == album).toList();
-  }
+  // 分组结果随音频库索引一起缓存：专辑/艺术家网格每张卡片都会查询一次，
+  // 逐次全量扫描会退化成 O(卡片数 × 媒体数)。
+  List<MediaItem> itemsForAlbum(String album) =>
+      _audioIndex.byAlbum[album] ?? const <MediaItem>[];
 
-  List<MediaItem> itemsForArtist(String artist) {
-    return _audioItems.where((item) => item.artist == artist).toList();
-  }
+  List<MediaItem> itemsForArtist(String artist) =>
+      _audioIndex.byArtist[artist] ?? const <MediaItem>[];
 
-  List<MediaItem> itemsForAudioFolder(String folder) {
-    return _audioItems.where((item) => item.folder == folder).toList();
-  }
+  List<MediaItem> itemsForAudioFolder(String folder) =>
+      _audioIndex.byFolder[folder] ?? const <MediaItem>[];
 
   List<MediaItem> itemsForPlaylist(Playlist playlist) {
     final all = <String, MediaItem>{
@@ -775,14 +774,30 @@ class LumioAppState extends ChangeNotifier {
         .toList(growable: false);
   }
 
+  // 检索索引在首次搜索时建立，媒体库整块替换后重建：避免每次按键都为全部媒体
+  // 重新拼接并转小写检索文本。
+  List<_SearchEntry>? _searchIndex;
+  List<MediaItem>? _searchIndexAudio;
+  List<MediaItem>? _searchIndexVideo;
+
   List<MediaItem> search(String query) {
     final normalized = query.trim().toLowerCase();
     if (normalized.isEmpty) {
       return const <MediaItem>[];
     }
-    return <MediaItem>[..._audioItems, ..._videoItems]
-        .where((item) => item.searchText.contains(normalized))
-        .toList(growable: false);
+    var index = _searchIndex;
+    if (index == null ||
+        !identical(_searchIndexAudio, _audioItems) ||
+        !identical(_searchIndexVideo, _videoItems)) {
+      index = _SearchEntry.build(_audioItems, _videoItems);
+      _searchIndex = index;
+      _searchIndexAudio = _audioItems;
+      _searchIndexVideo = _videoItems;
+    }
+    return <MediaItem>[
+      for (final entry in index)
+        if (entry.text.contains(normalized)) entry.item,
+    ];
   }
 
   void selectSection(AppSection section) {
@@ -3050,30 +3065,51 @@ class LumioAppState extends ChangeNotifier {
   }
 }
 
-/// 音频库的派生视图。只在音频列表整块替换时重建，供最近添加、最常播放和
-/// 专辑/艺术家/文件夹聚合复用，避免界面每次重建都重复全量扫描与排序。
+/// 音频库的派生视图。只在音频列表整块替换时重建，供最近添加、最常播放、
+/// 专辑/艺术家/文件夹聚合与分组查询复用，避免界面每次重建都重复全量扫描与排序。
 class _AudioIndex {
   _AudioIndex._(
     this.recentlyAdded,
-    this.mostPlayed,
-    this.albums,
-    this.artists,
-    this.folders,
-  );
+    this.mostPlayed, {
+    required Map<String, List<MediaItem>> byAlbum,
+    required Map<String, List<MediaItem>> byArtist,
+    required Map<String, List<MediaItem>> byFolder,
+  })  : byAlbum = Map<String, List<MediaItem>>.unmodifiable(byAlbum),
+        byArtist = Map<String, List<MediaItem>>.unmodifiable(byArtist),
+        byFolder = Map<String, List<MediaItem>>.unmodifiable(byFolder),
+        albums = List<String>.unmodifiable(byAlbum.keys.toList()..sort()),
+        artists = List<String>.unmodifiable(byArtist.keys.toList()..sort()),
+        folders = List<String>.unmodifiable(byFolder.keys.toList()..sort());
 
   factory _AudioIndex.from(List<MediaItem> items) {
     List<MediaItem> top(int Function(MediaItem a, MediaItem b) compare) =>
         List<MediaItem>.unmodifiable(
           (List<MediaItem>.from(items)..sort(compare)).take(4),
         );
-    List<String> distinct(String Function(MediaItem item) select) =>
-        List<String>.unmodifiable(items.map(select).toSet().toList()..sort());
+    final byAlbum = <String, List<MediaItem>>{};
+    final byArtist = <String, List<MediaItem>>{};
+    final byFolder = <String, List<MediaItem>>{};
+    for (final item in items) {
+      (byAlbum[item.album] ??= <MediaItem>[]).add(item);
+      (byArtist[item.artist] ??= <MediaItem>[]).add(item);
+      (byFolder[item.folder] ??= <MediaItem>[]).add(item);
+    }
+    // 分组结果会被界面长期持有，转成不可变副本，避免调用方就地修改污染缓存。
+    for (final group in <Map<String, List<MediaItem>>>[
+      byAlbum,
+      byArtist,
+      byFolder,
+    ]) {
+      for (final key in group.keys) {
+        group[key] = List<MediaItem>.unmodifiable(group[key]!);
+      }
+    }
     return _AudioIndex._(
       top((a, b) => b.addedAt.compareTo(a.addedAt)),
       top((a, b) => b.playCount.compareTo(a.playCount)),
-      distinct((item) => item.album),
-      distinct((item) => item.artist),
-      distinct((item) => item.folder),
+      byAlbum: byAlbum,
+      byArtist: byArtist,
+      byFolder: byFolder,
     );
   }
 
@@ -3082,4 +3118,24 @@ class _AudioIndex {
   final List<String> albums;
   final List<String> artists;
   final List<String> folders;
+  final Map<String, List<MediaItem>> byAlbum;
+  final Map<String, List<MediaItem>> byArtist;
+  final Map<String, List<MediaItem>> byFolder;
+}
+
+/// 一条检索记录：预先算好小写检索文本，避免每次输入都重新拼接。
+class _SearchEntry {
+  _SearchEntry(this.item) : text = item.searchText;
+
+  static List<_SearchEntry> build(
+    List<MediaItem> audio,
+    List<MediaItem> video,
+  ) =>
+      List<_SearchEntry>.unmodifiable(<_SearchEntry>[
+        for (final item in audio) _SearchEntry(item),
+        for (final item in video) _SearchEntry(item),
+      ]);
+
+  final MediaItem item;
+  final String text;
 }
