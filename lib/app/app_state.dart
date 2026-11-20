@@ -764,12 +764,9 @@ class LumioAppState extends ChangeNotifier {
       _audioIndex.byFolder[folder] ?? const <MediaItem>[];
 
   List<MediaItem> itemsForPlaylist(Playlist playlist) {
-    final all = <String, MediaItem>{
-      for (final item in <MediaItem>[..._audioItems, ..._videoItems])
-        item.id: item,
-    };
+    final index = _mediaById;
     return playlist.mediaIds
-        .map((id) => all[id])
+        .map((id) => index[id])
         .whereType<MediaItem>()
         .toList(growable: false);
   }
@@ -2967,22 +2964,35 @@ class LumioAppState extends ChangeNotifier {
     return List<MediaItem>.unmodifiable(items);
   }
 
-  MediaItem? _findItem(String mediaId) {
-    for (final item in <MediaItem>[..._audioItems, ..._videoItems]) {
-      if (item.id == mediaId) {
-        return item;
-      }
+  // 按 id 的索引在媒体库整块替换后重建。此前每次查找都先拼出音频+视频的全量
+  // 列表再线性扫描，热门路径（播放事件、歌单卡片）会反复付这份成本。
+  Map<String, MediaItem>? _mediaByIdCache;
+  List<MediaItem>? _mediaByIdAudio;
+  List<MediaItem>? _mediaByIdVideo;
+
+  Map<String, MediaItem> get _mediaById {
+    final cached = _mediaByIdCache;
+    if (cached != null &&
+        identical(_mediaByIdAudio, _audioItems) &&
+        identical(_mediaByIdVideo, _videoItems)) {
+      return cached;
     }
-    return null;
+    final index = <String, MediaItem>{
+      for (final item in _audioItems) item.id: item,
+      for (final item in _videoItems) item.id: item,
+    };
+    _mediaByIdCache = index;
+    _mediaByIdAudio = _audioItems;
+    _mediaByIdVideo = _videoItems;
+    return index;
   }
 
+  MediaItem? _findItem(String mediaId) => _mediaById[mediaId];
+
   List<MediaItem> _itemsForIds(List<String> ids) {
-    final all = <String, MediaItem>{
-      for (final item in <MediaItem>[..._audioItems, ..._videoItems])
-        item.id: item,
-    };
+    final index = _mediaById;
     return List<MediaItem>.unmodifiable(
-      ids.map((id) => all[id]).whereType<MediaItem>(),
+      ids.map((id) => index[id]).whereType<MediaItem>(),
     );
   }
 

@@ -153,6 +153,7 @@ macOS 自 1.0.7（8）起保留 App Sandbox 并通过 Sparkle 应用内安装更
 | `albums`/`artists`/`audioFolders`/`recentlyAdded`/`mostPlayed` 每次访问全量扫描并排序 | 专辑网格在 `itemBuilder` 里取 `state.albums[index]`，每个格子都重算整份专辑集合 | 合并为 `_AudioIndex` 一次构建并按源列表身份缓存；专辑网格把聚合结果提到 `build` 外 |
 | `queueItems` 每次访问都对全部媒体建索引表 | 播放列表页每次重建重复建表 | 按队列与媒体列表身份缓存 |
 | `itemsForAlbum`/`itemsForArtist`/`itemsForAudioFolder` 每次调用全量扫描 | 专辑与艺术家网格每张卡片查询一次，全屏滚动退化为 O(卡片数 × 媒体数) | 在 `_AudioIndex` 中一并建立分组映射，结果转为不可变副本 |
+| `_findItem`/`_itemsForIds`/`itemsForPlaylist` 每次都先拼出音频+视频全量列表再线性扫描 | 歌单页对每个歌单卡片查一次，50 个歌单 × 1 万条媒体时每次重建约 12ms | 建立按 id 的媒体索引并按源列表身份缓存，查找降为 O(1) |
 | 搜索每次按键为全部媒体重新拼接并转小写检索文本 | 万级媒体库下每次按键约 1.9ms，输入有轻微延迟 | 建立按媒体库版本缓存的检索索引，只在媒体库变化时重建 |
 | 缺少异步相关 lint | 存在「await 之后使用 BuildContext」和未显式处理的 Future 各一处 | 修复两处并启用 `use_build_context_synchronously`、`unawaited_futures` |
 | UI 层直接用 `Platform.isX` 判断功能是否有入口 | 与 `PlatformCapabilities` 模型并存，新增平台时容易漏改 | 新增 `supportsPortableBackup`/`supportsDeviceTransfer`/`supportsAppUpdate`，设置页与应用更新页改读能力模型 |
@@ -163,6 +164,7 @@ macOS 自 1.0.7（8）起保留 App Sandbox 并通过 Sparkle 应用内安装更
 |---|---|---|
 | 100 次界面重建读取全部派生视图 | 202 ms | 0.13 ms |
 | 1000 次专辑卡片查询 | 90 ms | 0.11 ms |
+| 100 轮 × 20 个歌单卡片查询 | 1187 ms | 3.1 ms |
 | 10 次按键搜索 | 18.8 ms | 5.3 ms |
 
 ### 8.2 仍未处理
