@@ -142,3 +142,28 @@ macOS 自 1.0.7（8）起保留 App Sandbox 并通过 Sparkle 应用内安装更
 - 提交前执行 `dart run tool/check.dart`（格式、静态分析、单元测试），与 `.github/workflows/ci.yml` 的检查项一致。
 - 发版前执行 Android release 构建和签名 HarmonyOS debug HAP 构建，并做真机回归；受设备状态阻塞时记录原始问题。
 - 自动化验证不会操作真实用户媒体；移动、重命名和 MP3 标签写回只从用户主动操作入口触发并经过系统写授权。
+
+## 8. 技术债与优化记录
+
+### 8.1 2026-11-20 已优化
+
+| 问题 | 影响 | 处理 |
+|---|---|---|
+| `audioItems` 每次访问都复制列表并全量排序，`videoItems`/`playlists` 每次访问都重建不可变副本 | 播放中每 700ms 重建一次界面，万级媒体库时每次重建约 2ms 全部消耗在重新排序上 | 按「源列表身份 + 排序方式」缓存；新增 `audioCount`/`videoCount`，只取数量的位置不再触发排序 |
+| `albums`/`artists`/`audioFolders`/`recentlyAdded`/`mostPlayed` 每次访问全量扫描并排序 | 专辑网格在 `itemBuilder` 里取 `state.albums[index]`，每个格子都重算整份专辑集合 | 合并为 `_AudioIndex` 一次构建并按源列表身份缓存；专辑网格把聚合结果提到 `build` 外 |
+| `queueItems` 每次访问都对全部媒体建索引表 | 播放列表页每次重建重复建表 | 按队列与媒体列表身份缓存 |
+| 缺少异步相关 lint | 存在「await 之后使用 BuildContext」和未显式处理的 Future 各一处 | 修复两处并启用 `use_build_context_synchronously`、`unawaited_futures` |
+| UI 层直接用 `Platform.isX` 判断功能是否有入口 | 与 `PlatformCapabilities` 模型并存，新增平台时容易漏改 | 新增 `supportsPortableBackup`/`supportsDeviceTransfer`/`supportsAppUpdate`，设置页与应用更新页改读能力模型 |
+
+实测（100 次界面重建、1 万条音频、同一进程内对比）：优化前 202 ms，优化后 0.13 ms。
+
+### 8.2 仍未处理
+
+| 问题 | 现状 | 建议 |
+|---|---|---|
+| `LumioAppState` 单类约 3000 行，承载播放、媒体库、歌词、备份、互传全部状态 | UI 全部监听同一个 `ChangeNotifier`，播放进度每次更新都会重建整棵树 | 按域拆分 controller，并让页面只订阅所需部分 |
+| 歌词高亮以 100ms 轮询平台通道取进度 | 播放且歌词可见时约 10 次/秒通道往返 | 与 700ms 位置轮询合并，或在两次真实采样之间本地插值 |
+| 未引入 `flutter_lints` 完整基线 | 仅启用项目自定义的十余条规则；试算 `avoid_slow_async_io` 会新增 36 处、完整基线约 2100 处 | 分批引入，先修同步 IO 再逐步放宽 |
+| 搜索每次按键重建关键词文本并全量扫描 | 万级媒体库下每次按键约数千次字符串拼接与转小写 | 建立按媒体库版本缓存的检索索引，或加输入防抖 |
+| 界面文案全部硬编码中文 | 无法切换语言 | 引入 Flutter l10n 后统一迁移 |
+| iOS 无平台实现、HarmonyOS 缺备份/互传/更新/封面 | 见第 2 节矩阵 | 按产品优先级排期 |

@@ -98,7 +98,7 @@ class _MusicLibraryPageState extends State<MusicLibraryPage>
         ),
         foregroundColor: LumioTheme.onMediaColor(context),
         tooltip: '随机播放音乐库',
-        onPressed: state.audioItems.isEmpty
+        onPressed: state.audioCount == 0
             ? null
             : () => state.shuffleAll(MediaKind.audio),
         child: const Icon(Icons.shuffle_rounded),
@@ -1059,7 +1059,9 @@ class _AlbumGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (state.albums.isEmpty) {
+    // 网格滚动时 itemBuilder 会被反复调用，聚合结果只取一次，避免每格重算专辑集合并排序。
+    final albums = state.albums;
+    if (albums.isEmpty) {
       return const _MusicEmptyState(
         title: '暂无专辑',
         message: '扫描到音频后会按本地标签自动汇总专辑。',
@@ -1073,9 +1075,9 @@ class _AlbumGrid extends StatelessWidget {
         mainAxisSpacing: 12,
         childAspectRatio: 0.86,
       ),
-      itemCount: state.albums.length,
+      itemCount: albums.length,
       itemBuilder: (context, index) {
-        final album = state.albums[index];
+        final album = albums[index];
         final items = state.itemsForAlbum(album);
         return _CollectionCard(
           title: album,

@@ -29,7 +29,8 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
   }
 
   Future<void> _open() async {
-    if (Platform.isAndroid || Platform.isMacOS) {
+    // 是否需要确认框由平台能力决定；框内文案仍按平台区分安装方式。
+    if (widget.state.platformCapabilities.supportsAppUpdate) {
       final accepted = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(

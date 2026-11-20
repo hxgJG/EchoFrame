@@ -185,10 +185,78 @@ class LumioAppState extends ChangeNotifier {
     AppStoragePartition.playlists,
   };
 
-  List<MediaItem> get audioItems => _sortedAudioItems();
-  List<MediaItem> get videoItems => List<MediaItem>.unmodifiable(_videoItems);
-  List<Playlist> get playlists => List<Playlist>.unmodifiable(_playlists);
-  List<MediaItem> get queueItems => _itemsForIds(_queueIds);
+  // 排序结果与不可变视图按「源列表身份 + 排序方式」缓存。媒体库只在整块替换时
+  // 换新列表实例，MediaItem 本身不可变，因此不必每次访问都复制并重新排序。
+  // 新增就地修改 _audioItems/_videoItems 的代码时必须同时置空对应缓存。
+  List<MediaItem>? _sortedAudioCache;
+  List<MediaItem>? _sortedAudioCacheSource;
+  MusicSort? _sortedAudioCacheSort;
+  List<MediaItem>? _videoItemsView;
+  List<MediaItem>? _videoItemsViewSource;
+  List<Playlist>? _playlistsView;
+  List<Playlist>? _playlistsViewSource;
+  List<MediaItem>? _queueItemsCache;
+  List<String>? _queueItemsCacheIds;
+  List<MediaItem>? _queueItemsCacheAudio;
+  List<MediaItem>? _queueItemsCacheVideo;
+
+  List<MediaItem> get audioItems {
+    final cached = _sortedAudioCache;
+    if (cached != null &&
+        _sortedAudioCacheSort == _musicSort &&
+        identical(_sortedAudioCacheSource, _audioItems)) {
+      return cached;
+    }
+    final items = _sortedAudioItems();
+    _sortedAudioCache = items;
+    _sortedAudioCacheSource = _audioItems;
+    _sortedAudioCacheSort = _musicSort;
+    return items;
+  }
+
+  List<MediaItem> get videoItems {
+    final cached = _videoItemsView;
+    if (cached != null && identical(_videoItemsViewSource, _videoItems)) {
+      return cached;
+    }
+    final items = List<MediaItem>.unmodifiable(_videoItems);
+    _videoItemsView = items;
+    _videoItemsViewSource = _videoItems;
+    return items;
+  }
+
+  List<Playlist> get playlists {
+    final cached = _playlistsView;
+    if (cached != null && identical(_playlistsViewSource, _playlists)) {
+      return cached;
+    }
+    final items = List<Playlist>.unmodifiable(_playlists);
+    _playlistsView = items;
+    _playlistsViewSource = _playlists;
+    return items;
+  }
+
+  /// 只关心数量时使用，避免为了取长度而复制并排序整个媒体库。
+  int get audioCount => _audioItems.length;
+  int get videoCount => _videoItems.length;
+  int get playlistCount => _playlists.length;
+
+  List<MediaItem> get queueItems {
+    final cached = _queueItemsCache;
+    if (cached != null &&
+        identical(_queueItemsCacheIds, _queueIds) &&
+        identical(_queueItemsCacheAudio, _audioItems) &&
+        identical(_queueItemsCacheVideo, _videoItems)) {
+      return cached;
+    }
+    final items = _itemsForIds(_queueIds);
+    _queueItemsCache = items;
+    _queueItemsCacheIds = _queueIds;
+    _queueItemsCacheAudio = _audioItems;
+    _queueItemsCacheVideo = _videoItems;
+    return items;
+  }
+
   LumioSettings get settings => _settings;
   AppSection get section => _section;
   MusicSort get musicSort => _musicSort;
@@ -644,40 +712,44 @@ class LumioAppState extends ChangeNotifier {
     return '';
   }
 
-  List<MediaItem> get recentlyAdded {
-    final items = List<MediaItem>.from(_audioItems)
-      ..sort((a, b) => b.addedAt.compareTo(a.addedAt));
-    return List<MediaItem>.unmodifiable(items.take(4));
+  // 音频库派生视图（最近添加、最常播放、专辑/艺术家/文件夹聚合）按源列表身份缓存，
+  // 避免在每次界面重建时重复全量扫描与排序。
+  _AudioIndex? _audioIndexCache;
+  List<MediaItem>? _audioIndexSource;
+  List<String>? _videoFoldersCache;
+  List<MediaItem>? _videoFoldersSource;
+
+  _AudioIndex get _audioIndex {
+    final cached = _audioIndexCache;
+    if (cached != null && identical(_audioIndexSource, _audioItems)) {
+      return cached;
+    }
+    final index = _AudioIndex.from(_audioItems);
+    _audioIndexCache = index;
+    _audioIndexSource = _audioItems;
+    return index;
   }
 
-  List<MediaItem> get mostPlayed {
-    final items = List<MediaItem>.from(_audioItems)
-      ..sort((a, b) => b.playCount.compareTo(a.playCount));
-    return List<MediaItem>.unmodifiable(items.take(4));
-  }
+  List<MediaItem> get recentlyAdded => _audioIndex.recentlyAdded;
 
-  List<String> get albums {
-    final values = _audioItems.map((item) => item.album).toSet().toList()
-      ..sort();
-    return List<String>.unmodifiable(values);
-  }
+  List<MediaItem> get mostPlayed => _audioIndex.mostPlayed;
 
-  List<String> get artists {
-    final values = _audioItems.map((item) => item.artist).toSet().toList()
-      ..sort();
-    return List<String>.unmodifiable(values);
-  }
+  List<String> get albums => _audioIndex.albums;
 
-  List<String> get audioFolders {
-    final values = _audioItems.map((item) => item.folder).toSet().toList()
-      ..sort();
-    return List<String>.unmodifiable(values);
-  }
+  List<String> get artists => _audioIndex.artists;
+
+  List<String> get audioFolders => _audioIndex.folders;
 
   List<String> get videoFolders {
-    final values = _videoItems.map((item) => item.folder).toSet().toList()
-      ..sort();
-    return List<String>.unmodifiable(values);
+    final cached = _videoFoldersCache;
+    if (cached != null && identical(_videoFoldersSource, _videoItems)) {
+      return cached;
+    }
+    final values = List<String>.unmodifiable(
+        _videoItems.map((item) => item.folder).toSet().toList()..sort());
+    _videoFoldersCache = values;
+    _videoFoldersSource = _videoItems;
+    return values;
   }
 
   List<MediaItem> itemsForAlbum(String album) {
@@ -2976,4 +3048,38 @@ class LumioAppState extends ChangeNotifier {
     _playbackEventSubscription.cancel();
     super.dispose();
   }
+}
+
+/// 音频库的派生视图。只在音频列表整块替换时重建，供最近添加、最常播放和
+/// 专辑/艺术家/文件夹聚合复用，避免界面每次重建都重复全量扫描与排序。
+class _AudioIndex {
+  _AudioIndex._(
+    this.recentlyAdded,
+    this.mostPlayed,
+    this.albums,
+    this.artists,
+    this.folders,
+  );
+
+  factory _AudioIndex.from(List<MediaItem> items) {
+    List<MediaItem> top(int Function(MediaItem a, MediaItem b) compare) =>
+        List<MediaItem>.unmodifiable(
+          (List<MediaItem>.from(items)..sort(compare)).take(4),
+        );
+    List<String> distinct(String Function(MediaItem item) select) =>
+        List<String>.unmodifiable(items.map(select).toSet().toList()..sort());
+    return _AudioIndex._(
+      top((a, b) => b.addedAt.compareTo(a.addedAt)),
+      top((a, b) => b.playCount.compareTo(a.playCount)),
+      distinct((item) => item.album),
+      distinct((item) => item.artist),
+      distinct((item) => item.folder),
+    );
+  }
+
+  final List<MediaItem> recentlyAdded;
+  final List<MediaItem> mostPlayed;
+  final List<String> albums;
+  final List<String> artists;
+  final List<String> folders;
 }

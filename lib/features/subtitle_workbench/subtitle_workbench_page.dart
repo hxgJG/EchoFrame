@@ -375,6 +375,7 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
     if (!_hasPreview || _project!.cues.isEmpty) return;
     await _repository.call('play', {..._session, 'playing': false});
     await _readPosition();
+    if (!mounted) return;
     final base = List<EditableSubtitle>.of(_project!.cues);
     var advance = 0;
     final controller = TextEditingController(text: '0');

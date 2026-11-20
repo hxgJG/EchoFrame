@@ -17,6 +17,9 @@ class PlatformCapabilities {
     required this.supportsEqualizer,
     required this.supportsCrossfade,
     required this.supportsSystemMediaControls,
+    required this.supportsPortableBackup,
+    required this.supportsDeviceTransfer,
+    required this.supportsAppUpdate,
   });
 
   factory PlatformCapabilities.current() {
@@ -37,6 +40,9 @@ class PlatformCapabilities {
         supportsEqualizer: false,
         supportsCrossfade: false,
         supportsSystemMediaControls: true,
+        supportsPortableBackup: true,
+        supportsDeviceTransfer: true,
+        supportsAppUpdate: true,
       );
     }
     if (Platform.isAndroid) {
@@ -53,6 +59,9 @@ class PlatformCapabilities {
         supportsEqualizer: true,
         supportsCrossfade: true,
         supportsSystemMediaControls: true,
+        supportsPortableBackup: true,
+        supportsDeviceTransfer: true,
+        supportsAppUpdate: true,
       );
     }
     return const PlatformCapabilities(
@@ -68,6 +77,9 @@ class PlatformCapabilities {
       supportsEqualizer: false,
       supportsCrossfade: false,
       supportsSystemMediaControls: false,
+      supportsPortableBackup: false,
+      supportsDeviceTransfer: false,
+      supportsAppUpdate: false,
     );
   }
 
@@ -86,4 +98,13 @@ class PlatformCapabilities {
   final bool supportsEqualizer;
   final bool supportsCrossfade;
   final bool supportsSystemMediaControls;
+
+  /// 分区数据备份与云备份（`lumio/portable_backup`）是否可用。
+  final bool supportsPortableBackup;
+
+  /// 局域网设备互传（`lumio/device_transfer`）是否可用。
+  final bool supportsDeviceTransfer;
+
+  /// 应用内检查与安装更新（`lumio/app_update`）是否可用。
+  final bool supportsAppUpdate;
 }

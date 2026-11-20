@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
@@ -22,7 +24,7 @@ Future<T> _backupProgress<T>(BuildContext context, String message,
       ])),
     ),
   );
-  navigator.push(route);
+  unawaited(navigator.push(route));
   try {
     return await operation();
   } finally {

@@ -507,8 +507,8 @@ class _MediaShelf extends StatelessWidget {
                     ),
                   const SizedBox(height: 8),
                   Text(
-                    '${state.audioItems.length} 首音乐  ·  '
-                    '${state.videoItems.length} 个视频',
+                    '${state.audioCount} 首音乐  ·  '
+                    '${state.videoCount} 个视频',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           color: scheme.onSurfaceVariant,
                         ),

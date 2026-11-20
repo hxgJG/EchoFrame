@@ -59,7 +59,7 @@ class MusicHomePage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
         children: <Widget>[
-          _WelcomePanel(totalSongs: state.audioItems.length),
+          _WelcomePanel(totalSongs: state.audioCount),
           const SizedBox(height: 16),
           if (!hasSongs)
             _EmptyMusicPanel(

@@ -118,7 +118,7 @@ class _VideoList extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: <Widget>[
         const SectionHeader(title: '本地视频'),
-        if (state.videoItems.isEmpty)
+        if (state.videoCount == 0)
           _VideoEmptyState(
             icon: Icons.video_library_outlined,
             title: '还没有本地视频',

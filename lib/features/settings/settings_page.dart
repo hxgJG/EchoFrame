@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
@@ -63,10 +61,10 @@ class SettingsPage extends StatelessWidget {
                             context,
                             SettingsCategory.library,
                             Icons.video_library_outlined,
-                            '${state.audioItems.length} 首音乐 · ${state.videoItems.length} 个视频 · 扫描与歌词管理'),
+                            '${state.audioCount} 首音乐 · ${state.videoCount} 个视频 · 扫描与歌词管理'),
                         _category(context, SettingsCategory.backup,
                             Icons.backup_outlined, '导出、导入、本机备份与云端备份'),
-                        if (Platform.isMacOS || Platform.isAndroid)
+                        if (state.platformCapabilities.supportsDeviceTransfer)
                           _entry(
                               title: '设备互传',
                               subtitle: '局域网传输音乐、视频与歌词',
@@ -80,7 +78,7 @@ class SettingsPage extends StatelessWidget {
                     const SectionHeader(title: '应用'),
                     Card(
                       child: Column(children: [
-                        if (Platform.isMacOS || Platform.isAndroid)
+                        if (state.platformCapabilities.supportsAppUpdate)
                           _entry(
                               title: '应用更新',
                               subtitle: '查看版本、检查和下载更新',
