@@ -13,6 +13,7 @@ class PlatformAppStorageRepository implements AppStorageRepository {
 
   bool get _isSupportedPlatform =>
       Platform.isAndroid ||
+      Platform.isIOS ||
       Platform.isMacOS ||
       Platform.operatingSystem == 'ohos';
 
