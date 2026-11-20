@@ -20,6 +20,7 @@ extension PlaybackState on LumioAppState {
     _playbackError = null;
     _currentItem = item.copyWith(playCount: item.playCount + 1);
     _position = initialPosition;
+    _positionSampledAt = DateTime.now();
     _isPlaying = true;
     _replaceItem(_currentItem!);
     _startPositionTimer();
@@ -311,6 +312,7 @@ extension PlaybackState on LumioAppState {
     }
     _playbackEpoch++;
     _position = item.duration * fraction.clamp(0, 1);
+    _positionSampledAt = DateTime.now();
     if (!_playbackNeedsReload) _playbackRepository.seek(_position);
     _updateCurrentVideoResumePosition(forceSave: true);
     _saveState();
@@ -718,7 +720,7 @@ extension PlaybackState on LumioAppState {
     _positionTimer = null;
   }
 
-  Future<void> _syncPlaybackPosition({bool lyricsOnly = false}) async {
+  Future<void> _syncPlaybackPosition() async {
     if (!_isPlaying || _positionQueryInFlight || _disposed) {
       return;
     }
@@ -746,25 +748,30 @@ extension PlaybackState on LumioAppState {
         : position > item.duration
             ? item.duration
             : position;
+    _positionSampledAt = DateTime.now();
     _updateCurrentVideoResumePosition();
     final loopStart = _abLoopStart;
     final loopEnd = _abLoopEnd;
     if (loopStart != null && loopEnd != null && _position >= loopEnd) {
       _playbackEpoch++;
       _position = loopStart;
+      _positionSampledAt = DateTime.now();
       await _playbackRepository.seek(loopStart);
     }
     if (_disposed) return;
-    if (lyricsOnly) {
-      if (_currentItem?.kind == MediaKind.video &&
-          platformCapabilities.supportsSubtitleEditing) {
-        subtitleChanges.value++;
-      } else {
-        lyricChanges.value++;
-        _syncDesktopLyrics();
-      }
+    _notify();
+  }
+
+  /// 歌词/字幕高亮的刷新节拍。只做本地插值与通知，不读平台通道；
+  /// 真实进度由 700ms 的位置采样校正。
+  void _tickHighlight() {
+    if (!_isPlaying || _disposed) return;
+    if (_currentItem?.kind == MediaKind.video &&
+        platformCapabilities.supportsSubtitleEditing) {
+      subtitleChanges.value++;
     } else {
-      _notify();
+      lyricChanges.value++;
+      _syncDesktopLyrics();
     }
   }
 

@@ -244,9 +244,8 @@ extension LyricsState on LumioAppState {
         (_currentItem?.subtitles.isNotEmpty ?? false);
     final active = audioActive || videoActive;
     if (active && _lyricTimer == null) {
-      _lyricTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
-        _syncPlaybackPosition(lyricsOnly: true);
-      });
+      _lyricTimer = Timer.periodic(
+          const Duration(milliseconds: 100), (_) => _tickHighlight());
     } else if (!active) {
       _lyricTimer?.cancel();
       _lyricTimer = null;
@@ -262,13 +261,13 @@ extension LyricsState on LumioAppState {
     final durationMs = item?.duration.inMilliseconds ?? 0;
     final progress = durationMs <= 0
         ? 0.0
-        : (_position.inMilliseconds / durationMs).clamp(0.0, 1.0);
+        : (displayPosition.inMilliseconds / durationMs).clamp(0.0, 1.0);
     final title = item == null
         ? '忆光 · 桌面歌词'
         : artist.isEmpty || artist == '未知艺术家'
             ? item.title
             : '$artist · ${item.title}';
-    desktopLyrics.publish(<String, Object>{
+    final payload = <String, Object>{
       'audio': item == null || item.kind == MediaKind.audio,
       'title': title,
       'playing': _isPlaying,
@@ -287,7 +286,29 @@ extension LyricsState on LumioAppState {
       'next': lines.isNotEmpty && index + 1 < lines.length
           ? lines[index + 1].text
           : '',
-    });
+    };
+    // 歌词内容变化立即推送；只是进度推进时按 250ms 合并，避免以 10Hz 往返通道。
+    final now = DateTime.now();
+    final contentKey = <Object?>[
+      payload['audio'],
+      payload['title'],
+      payload['playing'],
+      payload['spectrumEnabled'],
+      payload['canControl'],
+      payload['mediaId'],
+      payload['canCalibrate'],
+      payload['current'],
+      payload['next'],
+    ].join('\u0000');
+    final lastAt = _desktopLyricsPublishedAt;
+    if (contentKey == _desktopLyricsContentKey &&
+        lastAt != null &&
+        now.difference(lastAt) < LumioAppState._desktopLyricsProgressInterval) {
+      return;
+    }
+    _desktopLyricsContentKey = contentKey;
+    _desktopLyricsPublishedAt = now;
+    desktopLyrics.publish(payload);
   }
 
   bool _hasExportableLyrics(MediaItem item) =>

@@ -146,6 +146,14 @@ class LumioAppState extends ChangeNotifier {
   RepeatMode _repeatMode = RepeatMode.off;
   PlaybackView _playbackView = PlaybackView.artwork;
   Duration _position = const Duration(minutes: 1, seconds: 12);
+  // 上一次从平台确认真实进度的时间。歌词与字幕高亮以它做本地插值，
+  // 避免为了 10Hz 刷新而每秒十次往返平台通道。
+  DateTime? _positionSampledAt;
+  static const Duration _maxInterpolation = Duration(seconds: 2);
+  static const Duration _desktopLyricsProgressInterval =
+      Duration(milliseconds: 250);
+  String? _desktopLyricsContentKey;
+  DateTime? _desktopLyricsPublishedAt;
   bool _isScanningLibrary = false;
   bool _isExportingLyrics = false;
   bool _portableBackupBusy = false;
@@ -337,12 +345,32 @@ class LumioAppState extends ChangeNotifier {
     return '${start == null ? 'A 未设' : formatDuration(start)} - ${end == null ? 'B 未设' : formatDuration(end)}';
   }
 
+  /// 供歌词与字幕高亮使用的进度：以最近一次真实采样为基准按播放速度外推。
+  /// 采样超时或未在播放时退回真实值，避免长时间不校正导致偏移。
+  Duration get displayPosition {
+    final sampledAt = _positionSampledAt;
+    final item = _currentItem;
+    if (!_isPlaying || sampledAt == null || item == null) return _position;
+    final elapsed = DateTime.now().difference(sampledAt);
+    if (elapsed <= Duration.zero || elapsed > _maxInterpolation) {
+      return _position;
+    }
+    final next = _position +
+        Duration(
+            microseconds: (elapsed.inMicroseconds * _playbackSpeed).round());
+    if (next < Duration.zero) return Duration.zero;
+    if (item.duration > Duration.zero && next > item.duration) {
+      return item.duration;
+    }
+    return next;
+  }
+
   int get currentLyricIndex {
     final lines = _currentItem?.lyrics ?? const <LyricLine>[];
     if (lines.isEmpty) {
       return -1;
     }
-    final effectivePosition = _position +
+    final effectivePosition = displayPosition +
         _settings.lyricOffset +
         Duration(
             milliseconds: _lyricCalibration?.offsetMs ??
@@ -379,13 +407,13 @@ class LumioAppState extends ChangeNotifier {
                 text: item.subtitles[i].text)
         ]);
       }
-      return _subtitleTimeline!.at(_position.inMilliseconds);
+      return _subtitleTimeline!.at(displayPosition.inMilliseconds);
     }
     for (final cue in item.subtitles) {
-      if (_position >= cue.start && _position <= cue.end) {
+      if (displayPosition >= cue.start && displayPosition <= cue.end) {
         return cue.text;
       }
-      if (cue.start > _position) {
+      if (cue.start > displayPosition) {
         break;
       }
     }
