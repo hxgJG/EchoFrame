@@ -8,6 +8,7 @@ import '../../shared/widgets/media_tile.dart';
 import '../../shared/widgets/section_header.dart';
 import '../search/search_page.dart';
 import 'audio_selection.dart';
+import 'playlist_picker.dart';
 
 class PlaylistsPage extends StatelessWidget {
   const PlaylistsPage({super.key, required this.state});
@@ -72,6 +73,17 @@ class PlaylistsPage extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 trailing: _PlaylistMenu(
+                  onPlayAll: items.isEmpty
+                      ? null
+                      : () => state.playAll(items.map((item) => item.id)),
+                  onQueueAll: items.isEmpty
+                      ? null
+                      : () {
+                          state.addManyToQueue(items.map((item) => item.id));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('已加入队列：${items.length} 项')),
+                          );
+                        },
                   onRename: () => _renamePlaylist(context, playlist),
                   onClear: items.isEmpty
                       ? null
@@ -128,7 +140,7 @@ class PlaylistsPage extends StatelessWidget {
   }
 
   Future<void> _createPlaylist(BuildContext context) async {
-    final name = await _showPlaylistNameDialog(
+    final name = await showPlaylistNameDialog(
       context,
       title: '新建播放列表',
       confirmLabel: '创建',
@@ -142,7 +154,7 @@ class PlaylistsPage extends StatelessWidget {
     BuildContext context,
     Playlist playlist,
   ) async {
-    final name = await _showPlaylistNameDialog(
+    final name = await showPlaylistNameDialog(
       context,
       title: '重命名播放列表',
       confirmLabel: '保存',
@@ -208,41 +220,6 @@ class PlaylistsPage extends StatelessWidget {
         items.map((item) => item.id),
       );
     }
-  }
-
-  Future<String?> _showPlaylistNameDialog(
-    BuildContext context, {
-    required String title,
-    required String confirmLabel,
-    String initialValue = '',
-  }) async {
-    final controller = TextEditingController(text: initialValue);
-    final value = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: '例如：夜跑节拍'),
-          textInputAction: TextInputAction.done,
-          onSubmitted: (value) => Navigator.of(context).pop(value),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text),
-            child: Text(confirmLabel),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    final trimmed = value?.trim();
-    return trimmed == null || trimmed.isEmpty ? null : trimmed;
   }
 }
 
@@ -423,11 +400,15 @@ class _PlaylistMenu extends StatelessWidget {
     required this.onRename,
     required this.onClear,
     required this.onDelete,
+    required this.onPlayAll,
+    required this.onQueueAll,
   });
 
   final VoidCallback onRename;
   final VoidCallback? onClear;
   final VoidCallback onDelete;
+  final VoidCallback? onPlayAll;
+  final VoidCallback? onQueueAll;
 
   @override
   Widget build(BuildContext context) {
@@ -435,6 +416,16 @@ class _PlaylistMenu extends StatelessWidget {
       tooltip: '播放列表操作',
       icon: const Icon(Icons.more_vert_rounded),
       itemBuilder: (context) => <PopupMenuEntry<String>>[
+        PopupMenuItem(
+          value: 'play',
+          enabled: onPlayAll != null,
+          child: const Text('播放全部'),
+        ),
+        PopupMenuItem(
+          value: 'queue',
+          enabled: onQueueAll != null,
+          child: const Text('全部加入队列'),
+        ),
         const PopupMenuItem(value: 'rename', child: Text('重命名')),
         PopupMenuItem(
           value: 'clear',
@@ -445,6 +436,10 @@ class _PlaylistMenu extends StatelessWidget {
       ],
       onSelected: (value) {
         switch (value) {
+          case 'play':
+            onPlayAll?.call();
+          case 'queue':
+            onQueueAll?.call();
           case 'rename':
             onRename();
           case 'clear':

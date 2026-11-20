@@ -54,8 +54,10 @@ Future<String?> showPlaylistNameDialog(
   BuildContext context, {
   required String title,
   required String confirmLabel,
+  String initialValue = '',
+  String hintText = '例如：通勤歌单',
 }) async {
-  final controller = TextEditingController();
+  final controller = TextEditingController(text: initialValue);
   final value = await showDialog<String>(
     context: context,
     builder: (context) => AlertDialog(
@@ -63,7 +65,7 @@ Future<String?> showPlaylistNameDialog(
       content: TextField(
         controller: controller,
         autofocus: true,
-        decoration: const InputDecoration(hintText: '例如：通勤歌单'),
+        decoration: InputDecoration(hintText: hintText),
         textInputAction: TextInputAction.done,
         onSubmitted: (value) => Navigator.of(context).pop(value),
       ),

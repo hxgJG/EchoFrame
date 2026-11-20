@@ -485,6 +485,18 @@ extension PlaybackState on LumioAppState {
     _notify();
   }
 
+  /// 从合集（专辑/艺术家/歌单）第一首开始播放，其余按顺序排入队列。
+  /// 备份中尚未关联本机文件的记录会被跳过。
+  void playAll(Iterable<String> mediaIds) {
+    final items = _itemsForIds(mediaIds.toList(growable: false))
+        .where((item) => item.sourceId != portableMediaSource)
+        .toList(growable: false);
+    if (items.isEmpty) return;
+    play(items.first);
+    final rest = items.skip(1).map((item) => item.id).toList(growable: false);
+    if (rest.isNotEmpty) addManyToQueue(rest);
+  }
+
   void addManyToQueue(Iterable<String> mediaIds) {
     final validIds = mediaIds.where((id) => _findItem(id) != null).toList();
     if (validIds.isEmpty) {

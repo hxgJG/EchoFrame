@@ -111,7 +111,8 @@ class _CollectionBody extends StatelessWidget {
                         runSpacing: 8,
                         children: <Widget>[
                           FilledButton.icon(
-                            onPressed: () => state.play(items.first),
+                            onPressed: () =>
+                                state.playAll(items.map((item) => item.id)),
                             icon: const Icon(Icons.play_arrow_rounded),
                             label: const Text('播放全部'),
                           ),
