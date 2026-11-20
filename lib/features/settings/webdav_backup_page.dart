@@ -188,7 +188,6 @@ class _WebDavBackupPageState extends State<WebDavBackupPage> {
                           TextField(
                               controller: _username,
                               enabled: !disabled,
-                              autofillHints: const [],
                               decoration: const InputDecoration(
                                   labelText: '账号（坚果云为邮箱）',
                                   border: OutlineInputBorder())),
@@ -199,7 +198,6 @@ class _WebDavBackupPageState extends State<WebDavBackupPage> {
                               obscureText: true,
                               enableSuggestions: false,
                               autocorrect: false,
-                              autofillHints: const [],
                               decoration: const InputDecoration(
                                   labelText: 'WebDAV 应用密码',
                                   helperText: '坚果云需在安全设置中创建第三方应用密码，不要使用登录密码。',

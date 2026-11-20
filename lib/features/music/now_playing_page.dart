@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import '../subtitle_workbench/subtitle_workbench_page.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/app_state.dart';
@@ -11,12 +10,13 @@ import '../../core/models/lumio_settings.dart';
 import '../../core/models/media_item.dart';
 import '../../core/playback/playback_page_gesture.dart';
 import '../../platform/media_library/lyrics_import.dart';
+import '../../shared/widgets/lyric_spectrum_background.dart';
+import '../../shared/widgets/lyrics_export_action.dart';
 import '../../shared/widgets/media_tile.dart';
 import '../../shared/widgets/playback_mode_button.dart';
-import '../../shared/widgets/lyrics_export_action.dart';
-import '../../shared/widgets/lyric_spectrum_background.dart';
-import 'lyric_calibration_dialog.dart';
+import '../subtitle_workbench/subtitle_workbench_page.dart';
 import 'lyric_authoring_page.dart';
+import 'lyric_calibration_dialog.dart';
 
 class NowPlayingPage extends StatefulWidget {
   const NowPlayingPage({super.key, required this.state});
@@ -1034,7 +1034,6 @@ class _VideoTextureView extends StatelessWidget {
               ? constraints.maxWidth
               : MediaQuery.sizeOf(context).width;
           return FittedBox(
-            fit: BoxFit.contain,
             child: SizedBox(
               width: width,
               height: width / aspectRatio,
@@ -1087,7 +1086,6 @@ class _SubtitleOverlayText extends StatelessWidget {
         fontWeight: FontWeight.w800,
         shadows: const <Shadow>[
           Shadow(
-            color: Colors.black,
             blurRadius: 4,
             offset: Offset(0, 1),
           ),

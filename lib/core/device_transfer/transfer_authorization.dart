@@ -1,5 +1,5 @@
-import 'transfer_protocol.dart';
 import 'transfer_pairing.dart';
+import 'transfer_protocol.dart';
 
 abstract interface class TransferClock {
   DateTime get now;

@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumio/core/updates/update_manifest.dart';
-import 'package:lumio/platform/app_update/update_transport.dart';
 import 'package:lumio/platform/app_update/update_diagnostics.dart';
+import 'package:lumio/platform/app_update/update_transport.dart';
 
 class _Headers implements HttpHeaders {
   _Headers([this.location, Map<String, String>? initial])

@@ -1,9 +1,9 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumio/app/app_state.dart';
-import 'package:lumio/core/models/media_item.dart';
-import 'package:lumio/core/models/lumio_settings.dart';
 import 'package:lumio/core/backup/portable_backup_format.dart';
+import 'package:lumio/core/models/lumio_settings.dart';
+import 'package:lumio/core/models/media_item.dart';
 import 'package:lumio/platform/app_storage/app_storage_repository.dart';
 import 'package:lumio/platform/media_library/media_library_repository.dart';
 import 'package:lumio/platform/media_library/platform_media_library_repository.dart';

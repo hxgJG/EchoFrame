@@ -7,8 +7,8 @@ import '../../core/lyrics/lyrics_export.dart';
 import '../../core/models/media_item.dart';
 import '../../core/subtitles/ass_parser.dart';
 import '../../core/subtitles/srt_parser.dart';
-import 'lyrics_import.dart';
 import 'lyrics_export_result.dart';
+import 'lyrics_import.dart';
 import 'media_file_operation.dart';
 import 'media_library_repository.dart';
 

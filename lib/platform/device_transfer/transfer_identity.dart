@@ -6,8 +6,8 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-import '../../core/device_transfer/transfer_protocol.dart';
 import '../../core/device_transfer/transfer_pairing.dart';
+import '../../core/device_transfer/transfer_protocol.dart';
 
 class TransferIdentity {
   TransferIdentity._(this.privateKey, this.publicKey, this.certificate);
@@ -68,6 +68,8 @@ class TransferIdentity {
         json['publicKey'] as String, json['certificate'] as String);
   }
 
+  // 服务端同样不加载系统根证书，只使用本机身份自签的证书链。
+  // ignore: avoid_redundant_argument_values
   SecurityContext serverContext() => SecurityContext(withTrustedRoots: false)
     ..minimumTlsProtocolVersion = TlsProtocolVersion.tls1_2
     ..useCertificateChainBytes(utf8.encode(certificate))

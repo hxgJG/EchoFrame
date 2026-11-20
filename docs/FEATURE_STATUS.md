@@ -156,7 +156,8 @@ macOS 自 1.0.7（8）起保留 App Sandbox 并通过 Sparkle 应用内安装更
 | `_findItem`/`_itemsForIds`/`itemsForPlaylist` 每次都先拼出音频+视频全量列表再线性扫描 | 歌单页对每个歌单卡片查一次，50 个歌单 × 1 万条媒体时每次重建约 12ms | 建立按 id 的媒体索引并按源列表身份缓存，查找降为 O(1) |
 | 搜索每次按键为全部媒体重新拼接并转小写检索文本 | 万级媒体库下每次按键约 1.9ms，输入有轻微延迟 | 建立按媒体库版本缓存的检索索引，只在媒体库变化时重建 |
 | 缺少异步相关 lint | 存在「await 之后使用 BuildContext」和未显式处理的 Future 各一处 | 修复两处并启用 `use_build_context_synchronously`、`unawaited_futures` |
-| lint 基线过窄，仅十余条自定义规则 | 资源泄漏（未取消的订阅、未关闭的 Sink）和常量、集合类型等常见问题无检查 | 逐条试算违规数后按成本引入 12 条规则，全部违规已在本次清零 |
+| lint 基线过窄，仅十余条自定义规则 | 资源泄漏（未取消的订阅、未关闭的 Sink）和常量、集合类型等常见问题无检查 | 逐条试算违规数后按成本引入 14 条规则，全部违规已在本次清零 |
+| 导入顺序与冗余默认实参无人检查 | 同一文件里 `dart:`、`package:`、相对导入混排，阅读成本高 | 启用 `directives_ordering`、`avoid_redundant_argument_values`，用 `dart fix` 修正 41 处；TLS 场景保留显式 `withTrustedRoots: false` 并注明原因 |
 | 歌词高亮以 100ms 轮询平台通道取进度 | 播放且歌词可见时约 10 次/秒通道往返；桌面歌词进度同样以 10Hz 推送 | 改为以 700ms 真实采样为基准本地插值（2 秒内有效），高亮节拍只做本地通知；桌面歌词仅在内容变化时立即推送，纯进度按 250ms 合并 |
 | `app_state.dart` 单文件约 3100 行 | 播放、媒体库、设置、歌词、歌单、持久化、查询混在一个类里，定位成本高 | 按域拆出 7 个新 part（播放/歌词/媒体库/设置/歌单/持久化/查询），核心文件从约 3100 行降到约 540 行；行为不变，`notifyListeners` 经 `_notify` 转发 |
 | UI 层直接用 `Platform.isX` 判断功能是否有入口 | 与 `PlatformCapabilities` 模型并存，新增平台时容易漏改 | 新增 `supportsPortableBackup`/`supportsDeviceTransfer`/`supportsAppUpdate`，设置页与应用更新页改读能力模型 |
@@ -177,7 +178,7 @@ macOS 自 1.0.7（8）起保留 App Sandbox 并通过 Sparkle 应用内安装更
 | 问题 | 现状 | 建议 |
 |---|---|---|
 | 状态仍是单一 `ChangeNotifier` | 文件定位问题已由拆分解决；但页面仍全部监听同一个实例，播放进度更新会触发所有订阅者 | 实测每条缓存命中约 1.3µs，暂无可测量的重建开销；若将来出现，再按域拆 controller 并让页面只订阅所需部分 |
-| 未引入 `flutter_lints` 完整基线 | 已按单项违规数分批引入 12 条；仍有 `directives_ordering`（57 处）、`avoid_redundant_argument_values`（17 处）等纯风格规则未启用 | 需要时按同样方式逐条评估，不整体引入 |
+| 未引入 `flutter_lints` 完整基线 | 已按单项违规数分批引入 14 条；剩余未启用的多为与现有代码风格冲突或有争议的规则 | 需要时按同样方式逐条评估，不整体引入 |
 | `unnecessary_null_checks` 未启用 | 现有 1 处 `invokeMapMethod(...)!` 去掉 `!` 会把「读取失败」从显式报错变成静默为空 | 保留当前写法与报错行为 |
 | 搜索仍为 O(n) 线性扫描 | 已缓存检索文本，但每次按键仍遍历全部媒体 | 需要时可加输入防抖，或改前缀索引 |
 | 未启用 `avoid_slow_async_io` | 该规则主张把 `File.exists` 等异步调用改为同步版本，会阻塞 UI isolate，与本项目界面线程要求冲突（现有 36 处均为异步调用） | 不建议引入 |

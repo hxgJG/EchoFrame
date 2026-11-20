@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import '../music/audio_selection.dart';
 
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../core/models/media_item.dart';
 import '../../shared/widgets/media_tile.dart';
+import '../music/audio_selection.dart';
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key, required this.state});
@@ -35,7 +35,6 @@ class _SearchPageState extends State<SearchPage> {
         children: <Widget>[
           TextField(
             controller: _controller,
-            autofocus: false,
             decoration: InputDecoration(
               hintText: '搜索歌曲、艺术家、专辑、视频或文件夹',
               prefixIcon: const Icon(Icons.search_rounded),

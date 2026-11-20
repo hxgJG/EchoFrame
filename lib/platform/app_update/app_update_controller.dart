@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+
 import '../../core/updates/release_config.dart';
 import '../../core/updates/update_manifest.dart';
-import 'update_transport.dart';
 import 'update_diagnostics.dart';
+import 'update_transport.dart';
 
 enum UpdatePhase {
   idle,

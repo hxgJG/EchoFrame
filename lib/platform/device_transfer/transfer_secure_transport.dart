@@ -9,8 +9,8 @@ import 'package:crypto/crypto.dart';
 import '../../core/device_transfer/transfer_authorization.dart';
 import '../../core/device_transfer/transfer_host.dart';
 import '../../core/device_transfer/transfer_invitation.dart';
-import '../../core/device_transfer/transfer_protocol.dart';
 import '../../core/device_transfer/transfer_pairing.dart';
+import '../../core/device_transfer/transfer_protocol.dart';
 import 'transfer_identity.dart';
 import 'transfer_receiver.dart';
 
@@ -525,6 +525,8 @@ class TransferSecureClient implements TransferDownloadSource {
     // 该 socket 交给 _Wire 持有，由它统一 destroy 并取消订阅。
     // ignore: close_sinks
     final socket = await SecureSocket.connect(endpoint.address, endpoint.port,
+        // 显式写明不信任系统根证书：本连接只认广播里携带的证书摘要。
+        // ignore: avoid_redundant_argument_values
         context: SecurityContext(withTrustedRoots: false)
           ..minimumTlsProtocolVersion = TlsProtocolVersion.tls1_2,
         timeout: const Duration(seconds: 10),

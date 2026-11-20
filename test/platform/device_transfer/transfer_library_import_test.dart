@@ -11,8 +11,8 @@ import 'package:lumio/core/lyrics/lyric_library.dart';
 import 'package:lumio/core/models/media_item.dart';
 import 'package:lumio/platform/app_storage/app_storage_repository.dart';
 import 'package:lumio/platform/device_transfer/received_transfer_store.dart';
-import 'package:lumio/platform/media_library/platform_media_library_repository.dart';
 import 'package:lumio/platform/media_library/media_library_repository.dart';
+import 'package:lumio/platform/media_library/platform_media_library_repository.dart';
 
 import '../../support/transfer_fixtures.dart';
 

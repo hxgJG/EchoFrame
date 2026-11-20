@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
-import 'audio_selection.dart';
-import 'lyric_authoring_page.dart';
 
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../core/models/lumio_settings.dart';
 import '../../core/models/media_item.dart';
-import '../search/search_page.dart';
-import '../../shared/widgets/media_tile.dart';
 import '../../shared/widgets/lyrics_export_action.dart';
-import '../../shared/widgets/section_header.dart';
+import '../../shared/widgets/media_tile.dart';
 import '../../shared/widgets/received_media_export_action.dart';
+import '../../shared/widgets/section_header.dart';
+import '../search/search_page.dart';
+import 'audio_selection.dart';
+import 'lyric_authoring_page.dart';
 
 class MusicLibraryPage extends StatefulWidget {
   const MusicLibraryPage({super.key, required this.state});

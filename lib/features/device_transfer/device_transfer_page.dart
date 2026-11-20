@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/app_state.dart';
-import '../../core/device_transfer/transfer_protocol.dart';
 import '../../core/device_transfer/transfer_pairing.dart';
+import '../../core/device_transfer/transfer_protocol.dart';
 import '../../platform/device_transfer/device_transfer_controller.dart';
-import '../../platform/device_transfer/received_transfer_store.dart';
 import '../../platform/device_transfer/platform_transfer_storage.dart';
+import '../../platform/device_transfer/received_transfer_store.dart';
 import '../music/lyric_library_page.dart';
 
 class DeviceTransferPage extends StatefulWidget {
@@ -492,7 +492,6 @@ class _DeviceTransferPageState extends State<DeviceTransferPage> {
       _panel([
         TextField(
             controller: _code,
-            maxLines: 1,
             maxLength: 32,
             enableSuggestions: false,
             autocorrect: false,

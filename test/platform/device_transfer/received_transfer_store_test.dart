@@ -85,7 +85,6 @@ void main() {
     final resumed = await fresh.prepare(
         peerDigest: transferPeerDigest,
         resource: resource,
-        policy: const TransferImportPolicy(),
         baseVersion: 'local-v2');
     expect(resumed.offset, 1);
     expect(resumed.policy.overwriteLyrics, false);

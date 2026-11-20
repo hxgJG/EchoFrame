@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
-import 'audio_selection.dart';
 
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../core/models/media_item.dart';
-import '../search/search_page.dart';
 import '../../shared/widgets/media_tile.dart';
 import '../../shared/widgets/metric_card.dart';
 import '../../shared/widgets/section_header.dart';
+import '../search/search_page.dart';
+import 'audio_selection.dart';
 
 class MusicHomePage extends StatelessWidget {
   const MusicHomePage({super.key, required this.state});
@@ -36,7 +36,6 @@ class MusicHomePage extends StatelessWidget {
                 cacheWidth: 102,
                 cacheHeight: 102,
                 fit: BoxFit.cover,
-                filterQuality: FilterQuality.medium,
               ),
             ),
             const SizedBox(width: 10),

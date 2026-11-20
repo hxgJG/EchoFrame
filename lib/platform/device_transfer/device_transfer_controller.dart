@@ -2,23 +2,23 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:nsd/nsd.dart' as nsd;
 
 import '../../app/app_state.dart';
 import '../../core/device_transfer/transfer_authorization.dart';
 import '../../core/device_transfer/transfer_host.dart';
 import '../../core/device_transfer/transfer_invitation.dart';
-import '../../core/device_transfer/transfer_protocol.dart';
 import '../../core/device_transfer/transfer_pairing.dart';
+import '../../core/device_transfer/transfer_protocol.dart';
 import 'platform_transfer_storage.dart';
 import 'received_transfer_store.dart';
 import 'shared_resource_reader.dart';
 import 'transfer_identity.dart';
+import 'transfer_peer_store.dart';
 import 'transfer_receiver.dart';
 import 'transfer_secure_transport.dart';
-import 'transfer_peer_store.dart';
 
 class DeviceTransferController extends ChangeNotifier
     with WidgetsBindingObserver {

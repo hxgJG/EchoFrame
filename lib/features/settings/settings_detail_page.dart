@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
-import 'webdav_backup_page.dart';
-import 'settings_theme.dart';
 
 import '../../app/app_state.dart';
+import '../../app/spectrum_palette.dart';
 import '../../app/theme.dart';
 import '../../app/theme_catalog.dart';
-import '../../app/spectrum_palette.dart';
 import '../../core/models/lumio_settings.dart';
 import '../../core/models/media_item.dart';
 import '../../platform/desktop_lyrics/desktop_lyrics_controller.dart';
-import '../music/lyric_library_page.dart';
 import '../../shared/widgets/lyrics_export_action.dart';
 import '../../shared/widgets/portable_backup_action.dart';
+import '../music/lyric_library_page.dart';
+import 'settings_theme.dart';
+import 'webdav_backup_page.dart';
 
 const List<String> _equalizerBands = <String>['60', '230', '910', '4k', '14k'];
 
@@ -192,7 +192,6 @@ class SettingsDetailPage extends StatelessWidget {
                 ),
               ),
               Slider(
-                min: 0,
                 max: DesktopLyricsController.maximumTransparency,
                 divisions: 12,
                 label: '${(state.desktopLyrics.transparency * 100).round()}%',
@@ -722,7 +721,6 @@ class SettingsDetailPage extends StatelessWidget {
                   ),
                 ),
                 Slider(
-                  min: 0,
                   max: 300,
                   divisions: 20,
                   label: '${state.settings.minimumAudioDuration.inSeconds} 秒',

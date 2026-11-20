@@ -284,7 +284,7 @@ List<String> _asStringList(Object? value) {
 
 List<double> _asDoubleList(Object? value, {required int fallbackLength}) {
   if (value is! List<Object?>) {
-    return List<double>.filled(fallbackLength, 0, growable: false);
+    return List<double>.filled(fallbackLength, 0);
   }
   final values = value
       .map((item) => _asDouble(item).clamp(-10, 10).toDouble())

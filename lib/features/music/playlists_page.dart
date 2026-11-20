@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
-import 'audio_selection.dart';
 
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../core/models/media_item.dart';
 import '../../core/models/playlist.dart';
-import '../search/search_page.dart';
 import '../../shared/widgets/media_tile.dart';
 import '../../shared/widgets/section_header.dart';
+import '../search/search_page.dart';
+import 'audio_selection.dart';
 
 class PlaylistsPage extends StatelessWidget {
   const PlaylistsPage({super.key, required this.state});

@@ -1,19 +1,19 @@
-import 'dart:io';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
-import 'package:crypto/crypto.dart';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumio/core/device_transfer/transfer_authorization.dart';
 import 'package:lumio/core/device_transfer/transfer_host.dart';
 import 'package:lumio/core/device_transfer/transfer_invitation.dart';
 import 'package:lumio/core/device_transfer/transfer_pairing.dart';
 import 'package:lumio/core/device_transfer/transfer_protocol.dart';
-import 'package:lumio/platform/device_transfer/transfer_identity.dart';
-import 'package:lumio/platform/device_transfer/transfer_secure_transport.dart';
 import 'package:lumio/platform/device_transfer/received_transfer_store.dart';
+import 'package:lumio/platform/device_transfer/transfer_identity.dart';
 import 'package:lumio/platform/device_transfer/transfer_receiver.dart';
+import 'package:lumio/platform/device_transfer/transfer_secure_transport.dart';
 
 import '../../support/transfer_fixtures.dart';
 
@@ -247,7 +247,7 @@ void main() {
   test('旧版握手得到明确升级提示，不降级或生成申请', () async {
     final endpoint = server.endpoint!;
     final socket = await SecureSocket.connect(endpoint.address, endpoint.port,
-        context: SecurityContext(withTrustedRoots: false),
+        context: SecurityContext(),
         onBadCertificate: (cert) =>
             sha256.convert(cert.der).toString() == endpoint.certificateDigest);
     final response = Completer<Map<String, dynamic>>();

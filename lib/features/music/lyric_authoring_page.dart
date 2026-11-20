@@ -338,7 +338,6 @@ class _LyricAuthoringPageState extends State<LyricAuthoringPage> {
                                                     controller: source,
                                                     expands: true,
                                                     maxLines: null,
-                                                    minLines: null,
                                                     maxLength: LyricDraft
                                                         .maxTextLength,
                                                     onChanged: (value) => action(

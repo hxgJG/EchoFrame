@@ -4,16 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app/app_state.dart';
-import 'app/theme.dart';
 import 'app/spectrum_palette.dart';
+import 'app/theme.dart';
+import 'features/music/lyric_calibration_dialog.dart';
 import 'features/music/music_home_page.dart';
 import 'features/music/music_library_page.dart';
 import 'features/music/now_playing_page.dart';
-import 'features/music/lyric_calibration_dialog.dart';
 import 'features/music/playlists_page.dart';
 import 'features/settings/settings_page.dart';
-import 'features/video/video_page.dart';
 import 'features/subtitle_workbench/subtitle_workbench_page.dart';
+import 'features/video/video_page.dart';
 import 'shared/widgets/mini_player.dart';
 import 'shared/widgets/mobile_player_shell.dart';
 
@@ -466,7 +466,6 @@ class _MediaShelf extends StatelessWidget {
                           height: 38,
                           cacheWidth: 114,
                           cacheHeight: 114,
-                          filterQuality: FilterQuality.medium,
                         ),
                       ),
                       const SizedBox(width: 12),

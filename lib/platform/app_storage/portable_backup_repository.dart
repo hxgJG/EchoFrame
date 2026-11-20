@@ -7,11 +7,11 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-import '../../core/models/media_item.dart';
 import '../../core/backup/portable_backup_format.dart';
 import '../../core/lyrics/lyric_library.dart';
-import '../../core/models/playlist.dart';
 import '../../core/models/lumio_settings.dart';
+import '../../core/models/media_item.dart';
+import '../../core/models/playlist.dart';
 import '../../core/subtitles/subtitle_project.dart';
 
 const portableBackupLimit = 2 * 1024 * 1024 * 1024;

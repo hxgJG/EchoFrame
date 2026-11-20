@@ -72,7 +72,6 @@ class LumioThemeCatalog {
       label: '薄荷 · 日与夜',
       light: ColorScheme.fromSeed(
         seedColor: const Color(0xFF276B5B),
-        brightness: Brightness.light,
         secondary: const Color(0xFF9B5141),
         onSecondary: Colors.white,
         secondaryContainer: const Color(0xFFFBE3DA),

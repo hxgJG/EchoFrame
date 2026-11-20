@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../core/models/media_item.dart';
-import '../music/now_playing_page.dart';
-import '../subtitle_workbench/subtitle_workbench_page.dart';
-import '../search/search_page.dart';
 import '../../shared/widgets/media_tile.dart';
-import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/received_media_export_action.dart';
+import '../../shared/widgets/section_header.dart';
+import '../music/now_playing_page.dart';
+import '../search/search_page.dart';
+import '../subtitle_workbench/subtitle_workbench_page.dart';
 
 class VideoPage extends StatefulWidget {
   const VideoPage({super.key, required this.state});
