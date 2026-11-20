@@ -24,6 +24,7 @@ class PlatformPlaybackRepository implements PlaybackRepository {
 
   static bool get _isSupportedPlatform =>
       Platform.isAndroid ||
+      Platform.isIOS ||
       Platform.isMacOS ||
       Platform.operatingSystem == 'ohos';
 

@@ -13,6 +13,7 @@
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		E10000022026112000000001 /* LumioAppStoragePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000012026112000000001 /* LumioAppStoragePlugin.swift */; };
 		E10000022026112000000003 /* LumioMediaLibraryPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000012026112000000003 /* LumioMediaLibraryPlugin.swift */; };
+		E10000022026112000000005 /* LumioPlaybackPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000012026112000000005 /* LumioPlaybackPlugin.swift */; };
 		9382BD1C4FD31ABD9ECAF333 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AD97A3380E83570638052EF9 /* Pods_Runner.framework */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
@@ -56,6 +57,7 @@
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		E10000012026112000000001 /* LumioAppStoragePlugin.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = LumioAppStoragePlugin.swift; sourceTree = "<group>"; };
 		E10000012026112000000003 /* LumioMediaLibraryPlugin.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = LumioMediaLibraryPlugin.swift; sourceTree = "<group>"; };
+		E10000012026112000000005 /* LumioPlaybackPlugin.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = LumioPlaybackPlugin.swift; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Flutter/Debug.xcconfig; sourceTree = "<group>"; };
 		9740EEB31CF90195004384FC /* Generated.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Generated.xcconfig; path = Flutter/Generated.xcconfig; sourceTree = "<group>"; };
@@ -166,6 +168,7 @@
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				E10000012026112000000001 /* LumioAppStoragePlugin.swift */,
 				E10000012026112000000003 /* LumioMediaLibraryPlugin.swift */,
+				E10000012026112000000005 /* LumioPlaybackPlugin.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 			);
 			path = Runner;
@@ -386,6 +389,7 @@
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				E10000022026112000000001 /* LumioAppStoragePlugin.swift in Sources */,
 				E10000022026112000000003 /* LumioMediaLibraryPlugin.swift in Sources */,
+				E10000022026112000000005 /* LumioPlaybackPlugin.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

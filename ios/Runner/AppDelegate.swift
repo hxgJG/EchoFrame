@@ -14,6 +14,9 @@ import UIKit
     if let registrar = registrar(forPlugin: "LumioMediaLibraryPlugin") {
       LumioMediaLibraryPlugin.register(with: registrar)
     }
+    if let registrar = registrar(forPlugin: "LumioPlaybackPlugin") {
+      LumioPlaybackPlugin.register(with: registrar)
+    }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 }

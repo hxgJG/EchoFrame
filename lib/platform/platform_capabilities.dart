@@ -45,6 +45,27 @@ class PlatformCapabilities {
         supportsAppUpdate: true,
       );
     }
+    if (Platform.isIOS) {
+      // iOS 采用主动导入：可播放、可出画面，但文件改名/移动/写标签、均衡器、
+      // 淡入淡出、画中画与系统媒体控制尚未接入。
+      return const PlatformCapabilities(
+        supportsFolderPicker: false,
+        supportsPersistentFolderAccess: false,
+        supportsFileRename: false,
+        supportsFileMove: false,
+        supportsTagWrite: false,
+        supportsShare: false,
+        supportsVideoTexture: true,
+        supportsPictureInPicture: false,
+        supportsBrightnessAdjustment: false,
+        supportsEqualizer: false,
+        supportsCrossfade: false,
+        supportsSystemMediaControls: false,
+        supportsPortableBackup: false,
+        supportsDeviceTransfer: false,
+        supportsAppUpdate: false,
+      );
+    }
     if (Platform.isAndroid) {
       return const PlatformCapabilities(
         supportsFolderPicker: false,
